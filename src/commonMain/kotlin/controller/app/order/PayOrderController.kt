@@ -1,0 +1,32 @@
+package controller.app.order
+
+import model.PayOrder
+import logic.PayOrderLogic
+import controller.admin.order.dto.PayOrderSubmitRequest
+import neton.core.annotations.Controller
+import neton.core.annotations.Get
+import neton.core.annotations.Post
+
+@Controller("/pay/order")
+class PayOrderController(private val payOrderLogic: PayOrderLogic) {
+
+    @Get("/get")
+    suspend fun get(id: Long): PayOrder? {
+        return payOrderLogic.get(id)
+    }
+
+    @Post("/submit")
+    suspend fun submit(request: PayOrderSubmitRequest): Long {
+        val order = PayOrder(
+            appId = request.appId,
+            merchantOrderId = request.merchantOrderId,
+            subject = request.subject,
+            body = request.body,
+            price = request.price,
+            channelCode = request.channelCode,
+            userIp = request.userIp,
+            expireTime = request.expireTime
+        )
+        return payOrderLogic.submit(order)
+    }
+}
