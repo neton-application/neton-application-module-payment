@@ -12,7 +12,7 @@ repositories {
 }
 
 kotlin {
-    listOf(macosArm64(), macosX64(), linuxX64(), linuxArm64(), mingwX64()).forEach { target ->
+    listOf(macosArm64(), linuxX64(), linuxArm64(), mingwX64()).forEach { target ->
         val coreInterop = rootProject.file("../neton/neton-core/build/nativeInterop/${target.name}").absolutePath
         target.binaries.forEach { binary ->
             binary.linkerOpts.add("-L$coreInterop")
@@ -38,12 +38,20 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
             }
         }
+
+        commonTest {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }
 
 dependencies {
     add("kspMacosArm64", "com.netonstream:neton-ksp")
 }
+
+val macosArm64KspOutputDir = layout.buildDirectory.dir("generated/ksp/macosArm64/macosArm64Main/kotlin")
 
 ksp {
     arg("neton.moduleId", "payment")
@@ -65,6 +73,13 @@ tasks.matching { it.name == "compileCommonMainKotlinMetadata" }.configureEach {
     dependsOn("kspKotlinMacosArm64")
 }
 
-tasks.matching { it.name.matches(Regex("compileKotlin(MacosArm64|MacosX64|LinuxX64|LinuxArm64|MingwX64)")) }.configureEach {
+tasks.matching { it.name.matches(Regex("compileKotlin(MacosArm64|LinuxX64|LinuxArm64|MingwX64)")) }.configureEach {
     dependsOn("kspKotlinMacosArm64")
+}
+
+tasks.matching { it.name == "kspKotlinMacosArm64" }.configureEach {
+    outputs.upToDateWhen {
+        val outDir = macosArm64KspOutputDir.get().asFile
+        outDir.exists() && outDir.walkTopDown().any { it.isFile }
+    }
 }

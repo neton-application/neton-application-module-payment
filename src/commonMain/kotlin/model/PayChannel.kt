@@ -14,7 +14,7 @@ data class PayChannel(
     val appId: Long,
     val code: String,
     val config: String,
-    val status: Int = 0,
+    val status: Int = 1,
     val feeRate: Int = 0,
     val remark: String? = null,
     @CreatedAt

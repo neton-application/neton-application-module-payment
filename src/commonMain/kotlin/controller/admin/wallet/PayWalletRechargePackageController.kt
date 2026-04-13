@@ -1,5 +1,7 @@
 package controller.admin.wallet
 
+import controller.admin.wallet.dto.CreatePayWalletRechargePackageRequest
+import controller.admin.wallet.dto.UpdatePayWalletRechargePackageRequest
 import model.PayWalletRechargePackage
 import table.PayWalletRechargePackageTable
 import neton.database.dsl.*
@@ -16,13 +18,28 @@ import neton.core.annotations.Query
 class PayWalletRechargePackageController {
 
     @Post("/create")
-    suspend fun create(@Body pkg: PayWalletRechargePackage): Long {
-        return PayWalletRechargePackageTable.insert(pkg).id
+    suspend fun create(@Body request: CreatePayWalletRechargePackageRequest): Long {
+        return PayWalletRechargePackageTable.insert(
+            PayWalletRechargePackage(
+                name = request.name,
+                payPrice = request.payPrice,
+                bonusPrice = request.bonusPrice,
+                status = request.status
+            )
+        ).id
     }
 
     @Put("/update")
-    suspend fun update(@Body pkg: PayWalletRechargePackage) {
-        PayWalletRechargePackageTable.update(pkg)
+    suspend fun update(@Body request: UpdatePayWalletRechargePackageRequest) {
+        PayWalletRechargePackageTable.update(
+            PayWalletRechargePackage(
+                id = request.id,
+                name = request.name,
+                payPrice = request.payPrice,
+                bonusPrice = request.bonusPrice,
+                status = request.status
+            )
+        )
     }
 
     @Delete("/delete/{id}")

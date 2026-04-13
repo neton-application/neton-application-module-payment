@@ -14,7 +14,7 @@ data class PayWalletRechargePackage(
     val name: String,
     val payPrice: Long,
     val bonusPrice: Long = 0,
-    val status: Int = 0,
+    val status: Int = 1,
     @CreatedAt
     val createdAt: String? = null,
     @UpdatedAt

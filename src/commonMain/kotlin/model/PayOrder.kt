@@ -18,7 +18,7 @@ data class PayOrder(
     val price: Long,
     val channelCode: String? = null,
     val channelOrderNo: String? = null,
-    val status: Int = 0,
+    val status: Int = 1,
     val userIp: String? = null,
     val expireTime: Long? = null,
     val successTime: Long? = null,

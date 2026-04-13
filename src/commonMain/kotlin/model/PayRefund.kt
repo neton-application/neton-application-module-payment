@@ -19,7 +19,7 @@ data class PayRefund(
     val payPrice: Long,
     val refundPrice: Long,
     val reason: String? = null,
-    val status: Int = 0,
+    val status: Int = 1,
     val successTime: Long? = null,
     @CreatedAt
     val createdAt: String? = null,

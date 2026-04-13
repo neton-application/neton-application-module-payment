@@ -6,12 +6,13 @@ import controller.admin.order.dto.PayOrderSubmitRequest
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
 import neton.core.annotations.Post
+import neton.core.annotations.PathVariable
 
 @Controller("/pay/order")
 class PayOrderController(private val payOrderLogic: PayOrderLogic) {
 
-    @Get("/get")
-    suspend fun get(id: Long): PayOrder? {
+    @Get("/get/{id}")
+    suspend fun get(@PathVariable id: Long): PayOrder? {
         return payOrderLogic.get(id)
     }
 

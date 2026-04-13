@@ -19,7 +19,7 @@ data class PayTransfer(
     val subject: String,
     val userName: String? = null,
     val accountNo: String? = null,
-    val status: Int = 0,
+    val status: Int = 1,
     val successTime: Long? = null,
     @CreatedAt
     val createdAt: String? = null,

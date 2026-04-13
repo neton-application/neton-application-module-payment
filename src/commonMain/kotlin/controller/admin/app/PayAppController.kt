@@ -1,8 +1,10 @@
 package controller.admin.app
 
-import model.PayApp
-import controller.admin.app.dto.AppUpdateStatusReqVO
+import controller.admin.app.dto.CreatePayAppRequest
+import controller.admin.app.dto.UpdatePayAppStatusRequest
+import controller.admin.app.dto.UpdatePayAppRequest
 import logic.PayAppLogic
+import model.PayApp
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
 import neton.core.annotations.Post
@@ -16,13 +18,26 @@ import neton.core.annotations.Query
 class PayAppController(private val payAppLogic: PayAppLogic) {
 
     @Post("/create")
-    suspend fun create(@Body app: PayApp): Long {
-        return payAppLogic.create(app)
+    suspend fun create(@Body request: CreatePayAppRequest): Long {
+        return payAppLogic.create(
+            PayApp(
+                name = request.name,
+                status = request.status,
+                remark = request.remark
+            )
+        )
     }
 
     @Put("/update")
-    suspend fun update(@Body app: PayApp) {
-        payAppLogic.update(app)
+    suspend fun update(@Body request: UpdatePayAppRequest) {
+        payAppLogic.update(
+            PayApp(
+                id = request.id,
+                name = request.name,
+                status = request.status,
+                remark = request.remark
+            )
+        )
     }
 
     @Delete("/delete/{id}")
@@ -35,9 +50,9 @@ class PayAppController(private val payAppLogic: PayAppLogic) {
         return payAppLogic.get(id)
     }
 
-    @Put("/update-status")
-    suspend fun updateStatus(@Body req: AppUpdateStatusReqVO) {
-        payAppLogic.updateStatus(req.id, req.status)
+    @Put("/update-status/{id}")
+    suspend fun updateStatus(@PathVariable id: Long, @Body req: UpdatePayAppStatusRequest) {
+        payAppLogic.updateStatus(id, req.status)
     }
 
     @Get("/list")

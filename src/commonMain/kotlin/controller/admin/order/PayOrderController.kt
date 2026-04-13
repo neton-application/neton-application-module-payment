@@ -14,8 +14,8 @@ import neton.core.annotations.Query
 @Controller("/pay/order")
 class PayOrderController(private val payOrderLogic: PayOrderLogic) {
 
-    @Get("/get")
-    suspend fun get(@Query id: Long, @Query sync: Boolean? = null): PayOrder? {
+    @Get("/get/{id}")
+    suspend fun get(@PathVariable id: Long, @Query sync: Boolean? = null): PayOrder? {
         return payOrderLogic.get(id)
     }
 

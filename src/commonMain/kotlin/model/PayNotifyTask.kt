@@ -14,7 +14,7 @@ data class PayNotifyTask(
     val appId: Long,
     val type: Int,
     val dataId: Long,
-    val status: Int = 0,
+    val status: Int = 1,
     val merchantUrl: String? = null,
     val notifyTimes: Int = 0,
     val maxNotifyTimes: Int = 0,

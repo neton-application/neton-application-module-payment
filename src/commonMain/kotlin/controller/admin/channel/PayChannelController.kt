@@ -1,5 +1,7 @@
 package controller.admin.channel
 
+import controller.admin.channel.dto.CreatePayChannelRequest
+import controller.admin.channel.dto.UpdatePayChannelRequest
 import model.PayChannel
 import table.PayChannelTable
 import neton.database.dsl.*
@@ -16,13 +18,32 @@ import neton.core.annotations.Query
 class PayChannelController {
 
     @Post("/create")
-    suspend fun create(@Body channel: PayChannel): Long {
-        return PayChannelTable.insert(channel).id
+    suspend fun create(@Body request: CreatePayChannelRequest): Long {
+        return PayChannelTable.insert(
+            PayChannel(
+                appId = request.appId,
+                code = request.code,
+                config = request.config,
+                status = request.status,
+                feeRate = request.feeRate,
+                remark = request.remark
+            )
+        ).id
     }
 
     @Put("/update")
-    suspend fun update(@Body channel: PayChannel) {
-        PayChannelTable.update(channel)
+    suspend fun update(@Body request: UpdatePayChannelRequest) {
+        PayChannelTable.update(
+            PayChannel(
+                id = request.id,
+                appId = request.appId,
+                code = request.code,
+                config = request.config,
+                status = request.status,
+                feeRate = request.feeRate,
+                remark = request.remark
+            )
+        )
     }
 
     @Delete("/delete/{id}")
@@ -30,8 +51,8 @@ class PayChannelController {
         PayChannelTable.destroy(id)
     }
 
-    @Get("/get")
-    suspend fun get(@Query appId: Long, @Query code: String): PayChannel? {
+    @Get("/get-by-app-and-code")
+    suspend fun getByAppAndCode(@Query appId: Long, @Query code: String): PayChannel? {
         return PayChannelTable.oneWhere {
             and(PayChannel::appId eq appId, PayChannel::code eq code)
         }

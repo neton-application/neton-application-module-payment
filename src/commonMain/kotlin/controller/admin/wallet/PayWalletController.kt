@@ -1,7 +1,7 @@
 package controller.admin.wallet
 
 import model.PayWallet
-import controller.admin.wallet.dto.WalletUpdateBalanceReqVO
+import controller.admin.wallet.dto.UpdateWalletBalanceRequest
 import logic.PayWalletLogic
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
@@ -12,8 +12,8 @@ import neton.core.annotations.Query
 @Controller("/pay/wallet")
 class PayWalletController(private val payWalletLogic: PayWalletLogic) {
 
-    @Get("/get")
-    suspend fun get(@Query userId: Long): PayWallet? {
+    @Get("/get-by-user-id")
+    suspend fun getByUserId(@Query userId: Long): PayWallet? {
         return payWalletLogic.getWalletByUserId(userId)
     }
 
@@ -25,7 +25,7 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
     ) = payWalletLogic.pageWallets(pageNo, pageSize, userId)
 
     @Put("/update-balance")
-    suspend fun updateBalance(@Body req: WalletUpdateBalanceReqVO) {
+    suspend fun updateBalance(@Body req: UpdateWalletBalanceRequest) {
         payWalletLogic.adjustBalance(req.userId, req.balance)
     }
 }
