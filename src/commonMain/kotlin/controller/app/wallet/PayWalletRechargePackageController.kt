@@ -13,7 +13,7 @@ class PayWalletRechargePackageController {
     suspend fun list(): List<PayWalletRechargePackage> {
         return PayWalletRechargePackageTable.query {
             where {
-                PayWalletRechargePackage::status eq 0
+                PayWalletRechargePackage::status eq 1
             }
             orderBy(PayWalletRechargePackage::payPrice.asc())
         }.list()
