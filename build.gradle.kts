@@ -49,37 +49,25 @@ kotlin {
 
 dependencies {
     add("kspMacosArm64", "com.netonstream:neton-ksp")
+    add("kspLinuxX64", "com.netonstream:neton-ksp")
+    add("kspLinuxArm64", "com.netonstream:neton-ksp")
+    add("kspMingwX64", "com.netonstream:neton-ksp")
 }
-
-val macosArm64KspOutputDir = layout.buildDirectory.dir("generated/ksp/macosArm64/macosArm64Main/kotlin")
 
 ksp {
     arg("neton.moduleId", "payment")
 }
 
-afterEvaluate {
-    val kspOut = file("build/generated/ksp/macosArm64/macosArm64Main/kotlin")
-    kotlin.sourceSets.named("commonMain") {
-        kotlin.srcDir(kspOut)
-    }
-    val ss = kotlin.sourceSets.findByName("macosArm64Main")
-    if (ss != null) {
-        val filtered = ss.kotlin.srcDirs.filter { !it.path.contains("generated/ksp") }
-        if (filtered.size < ss.kotlin.srcDirs.size) ss.kotlin.setSrcDirs(filtered)
+// KSP 生成代码加入各平台 sourceSet
+for (targetName in listOf("MacosArm64", "LinuxX64", "LinuxArm64", "MingwX64")) {
+    val lower = targetName.replaceFirstChar { it.lowercase() }
+    kotlin.sourceSets.named("${lower}Main") {
+        kotlin.srcDir("build/generated/ksp/$lower/${lower}Main/kotlin")
     }
 }
 
-tasks.matching { it.name == "compileCommonMainKotlinMetadata" }.configureEach {
-    dependsOn("kspKotlinMacosArm64")
-}
-
+// compile 依赖对应平台的 KSP 生成
 tasks.matching { it.name.matches(Regex("compileKotlin(MacosArm64|LinuxX64|LinuxArm64|MingwX64)")) }.configureEach {
-    dependsOn("kspKotlinMacosArm64")
-}
-
-tasks.matching { it.name == "kspKotlinMacosArm64" }.configureEach {
-    outputs.upToDateWhen {
-        val outDir = macosArm64KspOutputDir.get().asFile
-        outDir.exists() && outDir.walkTopDown().any { it.isFile }
-    }
+    val targetName = name.removePrefix("compileKotlin")
+    dependsOn("kspKotlin$targetName")
 }

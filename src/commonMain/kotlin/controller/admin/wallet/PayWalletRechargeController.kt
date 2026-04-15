@@ -6,22 +6,26 @@ import controller.admin.wallet.dto.MarkWalletRechargeRefundedRequest
 import logic.PayWalletLogic
 import neton.core.annotations.Body
 import neton.core.annotations.Controller
+import neton.core.annotations.Permission
 import neton.core.annotations.Post
 
 @Controller("/pay/wallet-recharge")
 class PayWalletRechargeController(private val payWalletLogic: PayWalletLogic) {
 
     @Post("/update-paid")
+    @Permission("pay:wallet-recharge:update")
     suspend fun updatePaid(@Body request: MarkWalletRechargePaidRequest) {
         payWalletLogic.markRechargePaid(request.id, request.payChannelCode)
     }
 
     @Post("/refund")
+    @Permission("pay:wallet-recharge:update")
     suspend fun refund(@Body request: MarkWalletRechargeRefundRequest) {
         payWalletLogic.markRechargeRefundRequested(request.id)
     }
 
     @Post("/update-refunded")
+    @Permission("pay:wallet-recharge:update")
     suspend fun updateRefunded(@Body request: MarkWalletRechargeRefundedRequest) {
         payWalletLogic.markRechargeRefunded(request.id)
     }

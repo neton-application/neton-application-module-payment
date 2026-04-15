@@ -7,17 +7,20 @@ import neton.database.dsl.*
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
 import neton.core.annotations.PathVariable
+import neton.core.annotations.Permission
 import neton.core.annotations.Query
 
 @Controller("/pay/transfer")
 class PayTransferController {
 
     @Get("/get/{id}")
+    @Permission("pay:transfer:query")
     suspend fun get(@PathVariable id: Long): PayTransfer? {
         return PayTransferTable.get(id)
     }
 
     @Get("/page")
+    @Permission("pay:transfer:page")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

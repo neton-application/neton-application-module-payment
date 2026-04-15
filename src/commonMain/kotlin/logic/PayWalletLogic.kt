@@ -17,6 +17,12 @@ class PayWalletLogic(
     private val db: DbContext = dbContext()
 ) {
 
+    companion object {
+        const val BIZ_TYPE_RECHARGE = 1
+        const val BIZ_TYPE_RECHARGE_REFUND = 2
+        const val BIZ_TYPE_ADMIN_ADJUST = 200
+    }
+
     private suspend fun requireWalletByUserId(userId: Long): PayWallet {
         return PayWalletTable.oneWhere { PayWallet::userId eq userId }
             ?: throw IllegalArgumentException("Wallet not found for userId: $userId")
@@ -39,7 +45,7 @@ class PayWalletLogic(
     suspend fun adjustBalance(userId: Long, balance: Long) {
         val wallet = requireWalletByUserId(userId)
         val diff = balance - wallet.balance
-        updateBalance(wallet.id, diff, 200, 0L, "Admin adjust")
+        updateBalance(wallet.id, diff, BIZ_TYPE_ADMIN_ADJUST, 0L, "Admin adjust")
     }
 
     suspend fun updateBalance(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
@@ -131,6 +137,7 @@ class PayWalletLogic(
         bonusPrice: Long = 0,
         packageId: Long? = null
     ): Long {
+        require(payPrice <= totalPrice) { "payPrice ($payPrice) must not exceed totalPrice ($totalPrice)" }
         val wallet = requireWalletByUserId(userId)
         val recharge = PayWalletRecharge(
             walletId = wallet.id,
@@ -173,16 +180,28 @@ class PayWalletLogic(
                 return@transaction
             }
             PayWalletRechargeStateMachine.ensureCanMarkPaid(recharge)
-            PayWalletRechargeTable.update(
-                recharge.copy(
-                    payStatus = PayWalletRechargeStateMachine.PAY_STATUS_PAID,
-                    payChannelCode = payChannelCode
-                )
-            )
+
+            // Optimistic lock: only update if payStatus is still the expected value.
+            // If a concurrent request already set payStatus = PAID, this returns 0 and we abort.
+            val updated = PayWalletRechargeTable.query {
+                where {
+                    and(
+                        PayWalletRecharge::id eq id,
+                        PayWalletRecharge::payStatus eq recharge.payStatus
+                    )
+                }
+            }.update {
+                set(PayWalletRecharge::payStatus, PayWalletRechargeStateMachine.PAY_STATUS_PAID)
+                set(PayWalletRecharge::payChannelCode, payChannelCode)
+            }
+            if (updated == 0L) {
+                throw IllegalStateException("Recharge $id was concurrently modified. Please retry.")
+            }
+
             applyBalanceUpdate(
                 walletId = recharge.walletId,
                 price = recharge.totalPrice,
-                bizType = 1,
+                bizType = BIZ_TYPE_RECHARGE,
                 bizId = recharge.id,
                 title = "Wallet recharge"
             )
@@ -211,13 +230,26 @@ class PayWalletLogic(
                 return@transaction
             }
             PayWalletRechargeStateMachine.ensureCanMarkRefunded(recharge)
-            PayWalletRechargeTable.update(
-                recharge.copy(refundStatus = PayWalletRechargeStateMachine.REFUND_STATUS_REFUNDED)
-            )
+
+            // Optimistic lock: only update if refundStatus hasn't changed concurrently.
+            val updated = PayWalletRechargeTable.query {
+                where {
+                    and(
+                        PayWalletRecharge::id eq id,
+                        PayWalletRecharge::refundStatus eq recharge.refundStatus
+                    )
+                }
+            }.update {
+                set(PayWalletRecharge::refundStatus, PayWalletRechargeStateMachine.REFUND_STATUS_REFUNDED)
+            }
+            if (updated == 0L) {
+                throw IllegalStateException("Recharge $id refund was concurrently modified. Please retry.")
+            }
+
             applyBalanceUpdate(
                 walletId = recharge.walletId,
                 price = -recharge.totalPrice,
-                bizType = 2,
+                bizType = BIZ_TYPE_RECHARGE_REFUND,
                 bizId = recharge.id,
                 title = "Wallet recharge refund"
             )

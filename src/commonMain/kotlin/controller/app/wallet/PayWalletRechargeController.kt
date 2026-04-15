@@ -8,7 +8,7 @@ import neton.core.annotations.Get
 import neton.core.annotations.Post
 import neton.core.interfaces.Identity
 
-@Controller("/pay/wallet-recharge")
+@Controller("/app/pay/wallet-recharge")
 class PayWalletRechargeController(private val payWalletLogic: PayWalletLogic) {
 
     @Post("/create")

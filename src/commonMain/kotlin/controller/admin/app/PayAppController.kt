@@ -7,6 +7,7 @@ import logic.PayAppLogic
 import model.PayApp
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
+import neton.core.annotations.Permission
 import neton.core.annotations.Post
 import neton.core.annotations.Put
 import neton.core.annotations.Delete
@@ -18,6 +19,7 @@ import neton.core.annotations.Query
 class PayAppController(private val payAppLogic: PayAppLogic) {
 
     @Post("/create")
+    @Permission("pay:app:create")
     suspend fun create(@Body request: CreatePayAppRequest): Long {
         return payAppLogic.create(
             PayApp(
@@ -29,6 +31,7 @@ class PayAppController(private val payAppLogic: PayAppLogic) {
     }
 
     @Put("/update")
+    @Permission("pay:app:update")
     suspend fun update(@Body request: UpdatePayAppRequest) {
         payAppLogic.update(
             PayApp(
@@ -41,25 +44,30 @@ class PayAppController(private val payAppLogic: PayAppLogic) {
     }
 
     @Delete("/delete/{id}")
+    @Permission("pay:app:delete")
     suspend fun delete(@PathVariable id: Long) {
         payAppLogic.delete(id)
     }
 
     @Get("/get/{id}")
+    @Permission("pay:app:query")
     suspend fun get(@PathVariable id: Long): PayApp? {
         return payAppLogic.get(id)
     }
 
     @Put("/update-status/{id}")
+    @Permission("pay:app:update")
     suspend fun updateStatus(@PathVariable id: Long, @Body req: UpdatePayAppStatusRequest) {
         payAppLogic.updateStatus(id, req.status)
     }
 
     @Get("/list")
+    @Permission("pay:app:list")
     suspend fun list(@Query name: String? = null, @Query status: Int? = null) =
         payAppLogic.list(name, status)
 
     @Get("/page")
+    @Permission("pay:app:page")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

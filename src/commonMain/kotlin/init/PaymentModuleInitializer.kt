@@ -32,9 +32,11 @@ object PaymentModuleInitializer : ModuleInitializer {
 
         // 绑定 Logic
         ctx.bind(PayAppLogic::class, PayAppLogic(loggerFactory.get("logic.pay-app")))
+        ctx.bind(PayChannelLogic::class, PayChannelLogic(loggerFactory.get("logic.pay-channel")))
         ctx.bind(PayOrderLogic::class, PayOrderLogic(loggerFactory.get("logic.pay-order")))
         ctx.bind(PayRefundLogic::class, PayRefundLogic(loggerFactory.get("logic.pay-refund")))
         ctx.bind(PayWalletLogic::class, PayWalletLogic(loggerFactory.get("logic.pay-wallet")))
+        ctx.bind(PayWalletRechargePackageLogic::class, PayWalletRechargePackageLogic(loggerFactory.get("logic.pay-wallet-recharge-package")))
         ctx.bind(PayNotifyLogic::class, PayNotifyLogic(loggerFactory.get("logic.pay-notify")))
 
         // 注册 KSP 生成的路由

@@ -6,7 +6,7 @@ import neton.core.annotations.Controller
 import neton.core.annotations.Get
 import neton.core.interfaces.Identity
 
-@Controller("/pay/wallet-transaction")
+@Controller("/app/pay/wallet-transaction")
 class PayWalletTransactionController(private val payWalletLogic: PayWalletLogic) {
 
     @Get("/page")

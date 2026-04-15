@@ -3,12 +3,13 @@ package controller.app.order
 import model.PayOrder
 import logic.PayOrderLogic
 import controller.admin.order.dto.PayOrderSubmitRequest
+import neton.core.annotations.Body
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
 import neton.core.annotations.Post
 import neton.core.annotations.PathVariable
 
-@Controller("/pay/order")
+@Controller("/app/pay/order")
 class PayOrderController(private val payOrderLogic: PayOrderLogic) {
 
     @Get("/get/{id}")
@@ -17,7 +18,7 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
     }
 
     @Post("/submit")
-    suspend fun submit(request: PayOrderSubmitRequest): Long {
+    suspend fun submit(@Body request: PayOrderSubmitRequest): Long {
         val order = PayOrder(
             appId = request.appId,
             merchantOrderId = request.merchantOrderId,

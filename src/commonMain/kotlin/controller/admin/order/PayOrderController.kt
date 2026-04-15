@@ -6,6 +6,7 @@ import controller.admin.order.dto.PayOrderSubmitRequest
 import controller.admin.order.dto.PayOrderDetailVO
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
+import neton.core.annotations.Permission
 import neton.core.annotations.Post
 import neton.core.annotations.Body
 import neton.core.annotations.PathVariable
@@ -15,16 +16,19 @@ import neton.core.annotations.Query
 class PayOrderController(private val payOrderLogic: PayOrderLogic) {
 
     @Get("/get/{id}")
+    @Permission("pay:order:query")
     suspend fun get(@PathVariable id: Long, @Query sync: Boolean? = null): PayOrder? {
         return payOrderLogic.get(id)
     }
 
     @Get("/get-detail/{id}")
+    @Permission("pay:order:query")
     suspend fun getDetail(@PathVariable id: Long): PayOrderDetailVO? {
         return payOrderLogic.getDetail(id)
     }
 
     @Post("/submit")
+    @Permission("pay:order:create")
     suspend fun submit(@Body request: PayOrderSubmitRequest): Long {
         val order = PayOrder(
             appId = request.appId,
@@ -40,6 +44,7 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
     }
 
     @Get("/page")
+    @Permission("pay:order:page")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

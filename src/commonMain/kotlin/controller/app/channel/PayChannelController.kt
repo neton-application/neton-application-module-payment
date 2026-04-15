@@ -6,7 +6,7 @@ import neton.database.dsl.*
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
 
-@Controller("/pay/channel")
+@Controller("/app/pay/channel")
 class PayChannelController {
 
     @Get("/get-enable-code-list")

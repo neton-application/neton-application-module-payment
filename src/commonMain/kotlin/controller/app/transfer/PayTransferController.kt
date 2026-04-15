@@ -7,7 +7,7 @@ import neton.core.annotations.Get
 import neton.core.http.NotFoundException
 
 
-@Controller("/pay/transfer")
+@Controller("/app/pay/transfer")
 class PayTransferController {
 
     @Get("/sync")
