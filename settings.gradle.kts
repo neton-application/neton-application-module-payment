@@ -12,7 +12,7 @@ rootProject.name = "module-payment"
 includeBuild("../neton")
 
 // 主应用（提供 module-system）
-includeBuild("../neton-application")
+includeBuild("../privchat-application")
 
 // 会员模块
-includeBuild("../neton-application-module-member")
+includeBuild("../privchat-application-module-member")
