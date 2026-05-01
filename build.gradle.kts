@@ -66,10 +66,11 @@ afterEvaluate {
     kotlin.sourceSets.named("commonMain") {
         kotlin.srcDir(kspOut)
     }
-    val ss = kotlin.sourceSets.findByName("macosArm64Main")
-    if (ss != null) {
-        val filtered = ss.kotlin.srcDirs.filter { !it.path.contains("generated/ksp") }
-        if (filtered.size < ss.kotlin.srcDirs.size) ss.kotlin.setSrcDirs(filtered)
+    listOf("macosArm64Main", "linuxX64Main", "linuxArm64Main", "mingwX64Main").forEach { name ->
+        kotlin.sourceSets.findByName(name)?.let { ss ->
+            val filtered = ss.kotlin.srcDirs.filter { !it.path.contains("generated/ksp") }
+            if (filtered.size < ss.kotlin.srcDirs.size) ss.kotlin.setSrcDirs(filtered)
+        }
     }
 }
 
@@ -77,5 +78,8 @@ tasks.matching { it.name == "compileCommonMainKotlinMetadata" }.configureEach {
     dependsOn("kspKotlinMacosArm64")
 }
 tasks.matching { it.name.matches(Regex("compileKotlin(MacosArm64|LinuxX64|LinuxArm64|MingwX64)")) }.configureEach {
+    dependsOn("kspKotlinMacosArm64")
+}
+tasks.matching { it.name.matches(Regex("kspKotlin(LinuxX64|LinuxArm64|MingwX64)")) }.configureEach {
     dependsOn("kspKotlinMacosArm64")
 }
