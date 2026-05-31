@@ -83,3 +83,9 @@ tasks.matching { it.name.matches(Regex("compileKotlin(MacosArm64|LinuxX64|LinuxA
 tasks.matching { it.name.matches(Regex("kspKotlin(LinuxX64|LinuxArm64|MingwX64)")) }.configureEach {
     dependsOn("kspKotlinMacosArm64")
 }
+
+// Embed SQL migration resources into binary (no runtime file IO).
+extra["neton.migration.moduleId"] = "payment"
+extra["neton.migration.dialects"] = listOf("postgresql")
+extra["neton.migration.sqlSourceDir"] = file("sql")
+apply(from = "../neton/scripts/embed-migration-resources.gradle.kts")
