@@ -2,6 +2,8 @@ package init
 
 import infra.TableRegistryBuilder
 import neton.core.component.NetonContext
+import neton.core.module.MigrationDialect
+import neton.core.module.MigrationSource
 import neton.core.module.ModuleInitializer
 import neton.logging.LoggerFactory
 
@@ -13,6 +15,15 @@ object PaymentModuleInitializer : ModuleInitializer {
 
     override val moduleId: String = "payment"
     override val dependsOn: List<String> = listOf("system")
+
+    /** 部署后路径,由 application/build.gradle.kts `copyModuleMigrations` task 填充. */
+    override fun migrations(): List<MigrationSource> = listOf(
+        MigrationSource(
+            moduleId = moduleId,
+            dialect = MigrationDialect.POSTGRESQL,
+            resourcePath = "migrations/$moduleId/postgresql",
+        )
+    )
 
     override fun initialize(ctx: NetonContext) {
         val loggerFactory = ctx.get(LoggerFactory::class)
