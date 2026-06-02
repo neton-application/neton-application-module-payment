@@ -6,7 +6,7 @@ import neton.database.dsl.*
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
 
-@Controller("/app/pay/wallet-recharge-package")
+@Controller("/pay/wallet-recharge-package")
 class PayWalletRechargePackageController {
 
     @Get("/list")

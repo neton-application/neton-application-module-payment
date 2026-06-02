@@ -9,7 +9,7 @@ import neton.core.annotations.Get
 import neton.core.annotations.Post
 import neton.core.annotations.PathVariable
 
-@Controller("/app/pay/order")
+@Controller("/pay/order")
 class PayOrderController(private val payOrderLogic: PayOrderLogic) {
 
     @Get("/get/{id}")
