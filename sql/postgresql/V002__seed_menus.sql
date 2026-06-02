@@ -1,0 +1,12 @@
+-- module-payment V002: 支付中心菜单 seed (从 dev 库导出)
+SET search_path = public;
+
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (4, '支付中心', '', 1, 0, '/pay', NULL, 'ant-design:pay-circle-outlined', 4, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (400, '应用管理', 'pay:app:list', 2, 4, 'app', 'pay/app/index', 'ant-design:appstore-outlined', 1, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (401, '支付订单', 'pay:order:list', 2, 4, 'order', 'pay/order/index', 'ant-design:account-book-outlined', 2, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (402, '退款订单', 'pay:refund:list', 2, 4, 'refund', 'pay/refund/index', 'ant-design:transaction-outlined', 3, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (403, '回调通知', 'pay:notify:list', 2, 4, 'notify', 'pay/notify/index', 'ant-design:notification-outlined', 4, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (404, '转账订单', 'pay:transfer:list', 2, 4, 'transfer', 'pay/transfer/index', 'ant-design:swap-outlined', 5, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (405, '钱包管理', '', 1, 4, 'wallet', NULL, 'ant-design:wallet-outlined', 6, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (4050, '钱包余额', 'pay:wallet:list', 2, 405, 'balance', 'pay/wallet/balance/index', '', 1, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (4051, '充值套餐', 'pay:wallet-recharge-package:list', 2, 405, 'recharge-package', 'pay/wallet/rechargePackage/index', '', 2, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
