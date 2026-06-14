@@ -11,6 +11,7 @@ import neton.database.api.DbContext
 import neton.database.dbContext
 import neton.logging.Logger
 
+@neton.core.annotations.Logic(logger = "logic.pay-order")
 class PayOrderLogic(
     private val log: Logger,
     private val db: DbContext = dbContext()
