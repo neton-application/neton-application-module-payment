@@ -110,50 +110,56 @@ class PayWalletLogic(
     // 每个动作单独事务 + (biz_type, biz_id=提现单id) 幂等：重复调用是 no-op，
     // 并发由 V003 部分唯一索引兜底。
 
+    // public 版各自开事务（独立调用）；xxxInTx 版不开事务，供调用方（如提现建单）
+    // 把「建单 + 冻结 + 审计」合进同一事务——表操作走协程内环境事务（与 applyBalanceUpdate 同）。
+
     /** 冻结资金（创建提现单时）：校验 available≥amount，freezePrice+=amount，balance 不变。幂等。 */
-    suspend fun freeze(walletId: Long, amount: Long, bizId: Long, title: String) {
-        db.transaction {
-            if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_FREEZE, bizId)) return@transaction
-            val wallet = PayWalletTable.get(walletId)
-                ?: throw IllegalArgumentException("Wallet not found: $walletId")
-            PayWalletFreezeRules.ensureCanFreeze(wallet.balance, wallet.freezePrice, amount)
-            PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice + amount))
-            insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_FREEZE, bizId, title, price = 0, balance = wallet.balance)
-            log.info("wallet.freeze", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
-        }
+    suspend fun freeze(walletId: Long, amount: Long, bizId: Long, title: String) =
+        db.transaction { freezeInTx(walletId, amount, bizId, title) }
+
+    suspend fun freezeInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
+        if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_FREEZE, bizId)) return
+        val wallet = PayWalletTable.get(walletId)
+            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+        PayWalletFreezeRules.ensureCanFreeze(wallet.balance, wallet.freezePrice, amount)
+        PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice + amount))
+        insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_FREEZE, bizId, title, price = 0, balance = wallet.balance)
+        log.info("wallet.freeze", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
     }
 
     /** 解冻资金（驳回/取消/打款失败）：freezePrice-=amount，balance 不变。幂等。 */
-    suspend fun unfreeze(walletId: Long, amount: Long, bizId: Long, title: String) {
-        db.transaction {
-            if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_UNFREEZE, bizId)) return@transaction
-            val wallet = PayWalletTable.get(walletId)
-                ?: throw IllegalArgumentException("Wallet not found: $walletId")
-            PayWalletFreezeRules.ensureCanUnfreeze(wallet.freezePrice, amount)
-            PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice - amount))
-            insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_UNFREEZE, bizId, title, price = 0, balance = wallet.balance)
-            log.info("wallet.unfreeze", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
-        }
+    suspend fun unfreeze(walletId: Long, amount: Long, bizId: Long, title: String) =
+        db.transaction { unfreezeInTx(walletId, amount, bizId, title) }
+
+    suspend fun unfreezeInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
+        if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_UNFREEZE, bizId)) return
+        val wallet = PayWalletTable.get(walletId)
+            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+        PayWalletFreezeRules.ensureCanUnfreeze(wallet.freezePrice, amount)
+        PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice - amount))
+        insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_UNFREEZE, bizId, title, price = 0, balance = wallet.balance)
+        log.info("wallet.unfreeze", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
     }
 
     /** 从冻结实扣（打款成功）：balance-=amount 且 freezePrice-=amount，可用余额不变。幂等。 */
-    suspend fun deductFrozen(walletId: Long, amount: Long, bizId: Long, title: String) {
-        db.transaction {
-            if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_DEDUCT, bizId)) return@transaction
-            val wallet = PayWalletTable.get(walletId)
-                ?: throw IllegalArgumentException("Wallet not found: $walletId")
-            PayWalletFreezeRules.ensureCanDeductFrozen(wallet.balance, wallet.freezePrice, amount)
-            val newBalance = wallet.balance - amount
-            PayWalletTable.update(
-                wallet.copy(
-                    balance = newBalance,
-                    freezePrice = wallet.freezePrice - amount,
-                    totalExpense = wallet.totalExpense + amount
-                )
+    suspend fun deductFrozen(walletId: Long, amount: Long, bizId: Long, title: String) =
+        db.transaction { deductFrozenInTx(walletId, amount, bizId, title) }
+
+    suspend fun deductFrozenInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
+        if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_DEDUCT, bizId)) return
+        val wallet = PayWalletTable.get(walletId)
+            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+        PayWalletFreezeRules.ensureCanDeductFrozen(wallet.balance, wallet.freezePrice, amount)
+        val newBalance = wallet.balance - amount
+        PayWalletTable.update(
+            wallet.copy(
+                balance = newBalance,
+                freezePrice = wallet.freezePrice - amount,
+                totalExpense = wallet.totalExpense + amount
             )
-            insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_DEDUCT, bizId, title, price = -amount, balance = newBalance)
-            log.info("wallet.deductFrozen", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
-        }
+        )
+        insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_DEDUCT, bizId, title, price = -amount, balance = newBalance)
+        log.info("wallet.deductFrozen", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
     }
 
     private suspend fun withdrawLedgerExists(bizType: Int, bizId: Long): Boolean =

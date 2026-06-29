@@ -31,6 +31,8 @@ object PaymentRuntimeBootstrap {
         registry.register(PayWalletRechargePackage::class, PayWalletRechargePackageTable)
         registry.register(PayTransfer::class, PayTransferTable)
         registry.register(UserBankCard::class, UserBankCardTable)
+        registry.register(WalletWithdrawOrder::class, WalletWithdrawOrderTable)
+        registry.register(WalletWithdrawAuditLog::class, WalletWithdrawAuditLogTable)
 
         // 银行卡卡号信封加密（P4-B1）：env 主密钥 → BankCardCrypto → 注入 UserBankCardLogic。
         // 手动 ctx.bind 早于生成的 PaymentLogicInitializer（absent-才-bind，不会被覆盖）；
