@@ -36,6 +36,9 @@ kotlin {
                 implementation("com.netonstream:neton-cache")
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.coroutines.core)
+                // 银行卡卡号信封加密（AES-256-GCM）
+                implementation(libs.cryptography.core)
+                implementation(libs.cryptography.provider.optimal)
             }
         }
 
