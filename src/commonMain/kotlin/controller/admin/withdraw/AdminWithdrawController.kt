@@ -19,7 +19,9 @@ import neton.core.interfaces.Identity
  * 后台提现订单（P4-C）。第一版「财务中心/提现订单」统一一个页面，用状态筛选；
  * 操作按钮按权限点细分（list/detail/approve/reject/mark-paid/mark-failed）。人工打款。
  */
-@Controller("/admin/wallet/withdraw")
+// 路由组由包名 controller.admin.* 推断为 admin → 框架自动挂 /admin 前缀；
+// @Controller 只写相对业务路径（不要再写 /admin，否则双前缀 /admin/admin/...）。
+@Controller("/wallet/withdraw")
 class AdminWithdrawController(private val logic: WalletWithdrawLogic) {
 
     /** 提现订单分页（状态/用户筛选）。 */
