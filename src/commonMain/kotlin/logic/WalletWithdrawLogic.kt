@@ -37,9 +37,9 @@ class WalletWithdrawLogic(
         amount: Long,
         currency: String = "CNY",
     ): WalletWithdrawOrder {
-        require(amount > 0) { "amount must be positive: $amount" }
+        requireParam(amount > 0) { "amount must be positive: $amount" }
         val wallet = payWallet.getWalletByUserId(userId)
-            ?: throw IllegalArgumentException("wallet not found for user $userId")
+            ?: walletNotFound("wallet not found for user $userId")
         // 银行卡必须属于本人且有效。
         UserBankCardTable.oneWhere {
             and(
@@ -47,7 +47,7 @@ class WalletWithdrawLogic(
                 UserBankCard::userId eq userId,
                 UserBankCard::deletedAt eq 0L,
             )
-        } ?: throw IllegalArgumentException("bank card not found or not yours: $bankCardId")
+        } ?: walletNotFound("bank card not found or not yours: $bankCardId")
 
         val fee = 0L
         return db.transaction {
@@ -74,7 +74,7 @@ class WalletWithdrawLogic(
     /** 用户取消（仅本人、仅 PENDING）：解冻。 */
     suspend fun cancel(userId: Long, orderId: Long): WalletWithdrawOrder = db.transaction {
         val order = requireOrder(orderId)
-        require(order.userId == userId) { "not your order: $orderId" }
+        if (order.userId != userId) walletNotFound("not your order: $orderId")
         SM.ensureCanCancel(order.status)
         transit(orderId, order.status, SM.CANCELLED) { }
         payWallet.unfreezeInTx(order.walletId, order.amount, order.id, "withdraw unfreeze (cancel) #${order.id}")
@@ -179,7 +179,7 @@ class WalletWithdrawLogic(
 
     private suspend fun requireOrder(orderId: Long): WalletWithdrawOrder =
         WalletWithdrawOrderTable.get(orderId)
-            ?: throw IllegalArgumentException("withdraw order not found: $orderId")
+            ?: walletNotFound("withdraw order not found: $orderId")
 
     /** 乐观锁状态流转：仅当当前 status==expected 才更新；否则抛并发冲突。 */
     private suspend fun transit(
@@ -200,7 +200,7 @@ class WalletWithdrawLogic(
             extra()
         }
         if (updated == 0L) {
-            throw IllegalStateException("withdraw order $orderId concurrently modified; please retry")
+            walletConflict("withdraw order $orderId state changed concurrently; please retry")
         }
     }
 

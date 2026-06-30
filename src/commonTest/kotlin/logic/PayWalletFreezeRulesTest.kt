@@ -1,5 +1,6 @@
 package logic
 
+import neton.core.http.HttpException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -21,14 +22,14 @@ class PayWalletFreezeRulesTest {
 
     @Test
     fun `freeze rejected when available insufficient`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanFreeze(balance = 100, freezePrice = 30, amount = 71)
         }
     }
 
     @Test
     fun `freeze rejected when amount not positive`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanFreeze(balance = 100, freezePrice = 0, amount = 0)
         }
     }
@@ -36,7 +37,7 @@ class PayWalletFreezeRulesTest {
     @Test
     fun `unfreeze rejected when exceeds frozen`() {
         PayWalletFreezeRules.ensureCanUnfreeze(freezePrice = 50, amount = 50)
-        assertFailsWith<IllegalArgumentException> {
+        assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanUnfreeze(freezePrice = 50, amount = 51)
         }
     }
@@ -45,7 +46,7 @@ class PayWalletFreezeRulesTest {
     fun `deduct frozen requires both frozen and balance cover amount`() {
         PayWalletFreezeRules.ensureCanDeductFrozen(balance = 100, freezePrice = 80, amount = 80)
         // frozen short
-        assertFailsWith<IllegalArgumentException> {
+        assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanDeductFrozen(balance = 100, freezePrice = 79, amount = 80)
         }
     }

@@ -13,6 +13,7 @@ import model.UserBankCard
 import model.WalletWithdrawAuditLog
 import model.WalletWithdrawOrder
 import neton.core.config.getEnv
+import neton.core.http.HttpException
 import neton.database.adapter.sqlx.SqlxDatabase
 import neton.database.config.DatabaseConfig
 import neton.database.config.DatabaseDriver
@@ -122,7 +123,7 @@ class WalletWithdrawDbSmokeTest {
             assertEquals(0L, w.freezePrice, "freeze -= amount")
             assertNotNull(ledger(302, o1.id), "WITHDRAW_DEDUCT 写入")
             // 幂等：重复 markPaid 被状态机拒（已 PAID）
-            assertFailsWith<IllegalArgumentException> { withdraw.markPaid(1, o1.id, "T123") }
+            assertFailsWith<HttpException> { withdraw.markPaid(1, o1.id, "T123") }
 
             // ========== 5. 第二单：驳回解冻 ==========
             val o2 = withdraw.createWithdrawOrder(TEST_UID, cardId, 20_000)
@@ -136,15 +137,15 @@ class WalletWithdrawDbSmokeTest {
 
             // ========== 6. 负向用例 ==========
             // 余额不足（available=70000，提 80000）
-            assertFailsWith<IllegalArgumentException> { withdraw.createWithdrawOrder(TEST_UID, cardId, 80_000) }
+            assertFailsWith<HttpException> { withdraw.createWithdrawOrder(TEST_UID, cardId, 80_000) }
             // 非本人银行卡
-            assertFailsWith<IllegalArgumentException> { withdraw.createWithdrawOrder(OTHER_UID, cardId, 1_000) }
+            assertFailsWith<HttpException> { withdraw.createWithdrawOrder(OTHER_UID, cardId, 1_000) }
             // 已软删银行卡
             assertTrue(cards.deleteBankCard(TEST_UID, cardId))
             assertEquals(0, cards.listMyBankCards(TEST_UID).size, "软删后 list 不返回")
-            assertFailsWith<IllegalArgumentException> { withdraw.createWithdrawOrder(TEST_UID, cardId, 1_000) }
+            assertFailsWith<HttpException> { withdraw.createWithdrawOrder(TEST_UID, cardId, 1_000) }
             // 非法状态流转（已 PAID 的单不能 approve）
-            assertFailsWith<IllegalArgumentException> { withdraw.approve(1, o1.id, null) }
+            assertFailsWith<HttpException> { withdraw.approve(1, o1.id, null) }
 
             println("[WALLET_DB_SMOKE] PASS: freeze/deduct/unfreeze/idempotency/negative all verified")
         }

@@ -63,7 +63,7 @@ class PayWalletLogic(
 
     private suspend fun applyBalanceUpdate(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
         val wallet = PayWalletTable.get(walletId)
-            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+            ?: walletNotFound("Wallet not found: $walletId")
 
         val newBalance = wallet.balance + price
         if (newBalance < 0) {
@@ -120,7 +120,7 @@ class PayWalletLogic(
     suspend fun freezeInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
         if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_FREEZE, bizId)) return
         val wallet = PayWalletTable.get(walletId)
-            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+            ?: walletNotFound("Wallet not found: $walletId")
         PayWalletFreezeRules.ensureCanFreeze(wallet.balance, wallet.freezePrice, amount)
         PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice + amount))
         insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_FREEZE, bizId, title, price = 0, balance = wallet.balance)
@@ -134,7 +134,7 @@ class PayWalletLogic(
     suspend fun unfreezeInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
         if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_UNFREEZE, bizId)) return
         val wallet = PayWalletTable.get(walletId)
-            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+            ?: walletNotFound("Wallet not found: $walletId")
         PayWalletFreezeRules.ensureCanUnfreeze(wallet.freezePrice, amount)
         PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice - amount))
         insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_UNFREEZE, bizId, title, price = 0, balance = wallet.balance)
@@ -148,7 +148,7 @@ class PayWalletLogic(
     suspend fun deductFrozenInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
         if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_DEDUCT, bizId)) return
         val wallet = PayWalletTable.get(walletId)
-            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+            ?: walletNotFound("Wallet not found: $walletId")
         PayWalletFreezeRules.ensureCanDeductFrozen(wallet.balance, wallet.freezePrice, amount)
         val newBalance = wallet.balance - amount
         PayWalletTable.update(

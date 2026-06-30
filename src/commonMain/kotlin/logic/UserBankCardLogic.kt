@@ -55,9 +55,9 @@ class UserBankCardLogic(
         bankCode: String?,
         cardNo: String,
     ): BankCardView {
-        require(holderName.isNotBlank()) { "holderName is required" }
-        require(bankName.isNotBlank()) { "bankName is required" }
-        require(cardNo.isNotBlank()) { "cardNo is required" }
+        requireParam(holderName.isNotBlank()) { "holderName is required" }
+        requireParam(bankName.isNotBlank()) { "bankName is required" }
+        requireParam(cardNo.isNotBlank()) { "cardNo is required" }
         val c = requireCrypto()
         val hash = c.hashOf(cardNo)
 
@@ -125,7 +125,7 @@ class UserBankCardLogic(
      */
     suspend fun adminRevealCardNo(operatorId: Long, id: Long): String {
         val card = UserBankCardTable.get(id)
-            ?: throw IllegalArgumentException("bank card not found: $id")
+            ?: walletNotFound("bank card not found: $id")
         val full = requireCrypto().decrypt(card.cardNoCiphertext, card.encryptedDataKey)
         // 审计：who reveal 了 谁的 哪张卡。打款链路落地后改写入 wallet_withdraw_audit_logs。
         log.warn(

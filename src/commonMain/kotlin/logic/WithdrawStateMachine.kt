@@ -21,22 +21,24 @@ object WithdrawStateMachine {
 
     val TERMINAL = setOf(PAID, REJECTED, FAILED, CANCELLED)
 
+    // 守卫判定条件原样不变；仅把拒绝从 require(IllegalArgumentException→500)
+    // 改为 requireState(HttpException OPERATION_CONFLICT→409)。状态不允许=预期业务拒绝。
     fun ensureCanApprove(status: Int) =
-        require(status == PENDING) { "withdraw can only be approved from PENDING, was $status" }
+        requireState(status == PENDING) { "withdraw can only be approved from PENDING, was $status" }
 
     fun ensureCanReject(status: Int) =
-        require(status == PENDING) { "withdraw can only be rejected from PENDING, was $status" }
+        requireState(status == PENDING) { "withdraw can only be rejected from PENDING, was $status" }
 
     fun ensureCanCancel(status: Int) =
-        require(status == PENDING) { "withdraw can only be cancelled from PENDING, was $status" }
+        requireState(status == PENDING) { "withdraw can only be cancelled from PENDING, was $status" }
 
     fun ensureCanMarkPaid(status: Int) =
-        require(status == APPROVED || status == PROCESSING) {
+        requireState(status == APPROVED || status == PROCESSING) {
             "withdraw can only be marked paid from APPROVED/PROCESSING, was $status"
         }
 
     fun ensureCanMarkFailed(status: Int) =
-        require(status == APPROVED || status == PROCESSING) {
+        requireState(status == APPROVED || status == PROCESSING) {
             "withdraw can only be marked failed from APPROVED/PROCESSING, was $status"
         }
 
