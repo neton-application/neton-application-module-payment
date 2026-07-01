@@ -130,6 +130,8 @@ class WalletWithdrawLogic(
         transit(orderId, order.status, SM.FAILED) {
             set(WalletWithdrawOrder::reviewerId, operatorId)
             set(WalletWithdrawOrder::failureReason, failureReason)
+            // 用户可见原因（App/H5 读 freezeRemarkUserVisible）；同 reject，失败原因也要让用户看到。
+            set(WalletWithdrawOrder::freezeRemarkUserVisible, failureReason)
         }
         payWallet.unfreezeInTx(order.walletId, order.amount, order.id, "withdraw unfreeze (failed) #${order.id}")
         audit(orderId, operatorId, "mark_failed", order.status, SM.FAILED, failureReason)
