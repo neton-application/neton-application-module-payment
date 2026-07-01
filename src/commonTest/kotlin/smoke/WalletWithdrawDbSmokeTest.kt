@@ -152,10 +152,28 @@ class WalletWithdrawDbSmokeTest {
             assertTrue(cards.deleteBankCard(TEST_UID, cardId))
             assertEquals(0, cards.listMyBankCards(TEST_UID).size, "软删后 list 不返回")
             assertFailsWith<HttpException> { withdraw.createWithdrawOrder(OperatorContext.of(TEST_UID),cardId, 1_000) }
-            // 非法状态流转（已 PAID 的单不能 approve）
-            assertFailsWith<HttpException> { withdraw.approve(OperatorContext.of(1), o1.id, null) }
+            // ========== 7. 终态订单：所有动钱操作无副作用（P0 状态矩阵 DB 级）==========
+            // o1 已 PAID（终态）：approve/reject/markPaid/markFailed/cancel 全非法，
+            // 且必须不改 balance/freeze、不新增 ledger/audit。
+            run {
+                val op = OperatorContext.of(TEST_UID)
+                val balBefore = PayWalletTable.get(wallet.id)!!.balance
+                val frzBefore = PayWalletTable.get(wallet.id)!!.freezePrice
+                val ledgerBefore = ledgerCount(wallet.id)
+                val auditBefore = auditCount(o1.id)
+                assertFailsWith<HttpException> { withdraw.approve(op, o1.id, null) }
+                assertFailsWith<HttpException> { withdraw.reject(op, o1.id, "x") }
+                assertFailsWith<HttpException> { withdraw.markPaid(op, o1.id, "x") }
+                assertFailsWith<HttpException> { withdraw.markFailed(op, o1.id, "x") }
+                assertFailsWith<HttpException> { withdraw.cancel(op, o1.id) }
+                val w2 = PayWalletTable.get(wallet.id)!!
+                assertEquals(balBefore, w2.balance, "终态非法操作不改 balance")
+                assertEquals(frzBefore, w2.freezePrice, "终态非法操作不改 freeze")
+                assertEquals(ledgerBefore, ledgerCount(wallet.id), "终态非法操作不新增 ledger")
+                assertEquals(auditBefore, auditCount(o1.id), "终态非法操作不新增 audit")
+            }
 
-            println("[WALLET_DB_SMOKE] PASS: freeze/deduct/unfreeze/idempotency/negative all verified")
+            println("[WALLET_DB_SMOKE] PASS: freeze/deduct/unfreeze/idempotency/negative/state-matrix all verified")
         }
     }
 
@@ -168,6 +186,11 @@ class WalletWithdrawDbSmokeTest {
         PayWalletTransactionTable.oneWhere {
             and(PayWalletTransaction::bizType eq bizType, PayWalletTransaction::bizId eq bizId)
         }
+
+    private suspend fun ledgerCount(walletId: Long): Int =
+        PayWalletTransactionTable.query {
+            where { PayWalletTransaction::walletId eq walletId }
+        }.list().size
 
     private suspend fun auditCount(orderId: Long): Int =
         WalletWithdrawAuditLogTable.query {
