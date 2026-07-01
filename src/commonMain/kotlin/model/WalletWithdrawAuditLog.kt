@@ -17,7 +17,14 @@ data class WalletWithdrawAuditLog(
     val action: String,
     val beforeStatus: Int,
     val afterStatus: Int,
+    /** 操作原因（reject/failed 原因、mark-paid 流水号等）。 */
     val remark: String? = null,
+    // 不可抵赖上下文（P0/V007）。
+    val operatorName: String? = null,
+    val operatorRole: String? = null,
+    val ip: String? = null,
+    val userAgent: String? = null,
+    val traceId: String? = null,
     @CreatedAt
     val createdAt: String? = null,
 )

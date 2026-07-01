@@ -1,10 +1,12 @@
 package controller.admin.bankcard
 
+import logic.OperatorContext
 import logic.UserBankCardLogic
 import neton.core.annotations.Controller
 import neton.core.annotations.PathVariable
 import neton.core.annotations.Permission
 import neton.core.annotations.Post
+import neton.core.http.HttpContext
 import neton.core.interfaces.Identity
 
 /**
@@ -18,6 +20,6 @@ class AdminBankCardController(private val logic: UserBankCardLogic) {
     /** 人工打款/审核时解密完整卡号。返回完整卡号字符串；调用即写审计。 */
     @Post("/reveal/{id}")
     @Permission("pay:bank-card:reveal")
-    suspend fun reveal(identity: Identity, @PathVariable id: Long): String =
-        logic.adminRevealCardNo(operatorId = identity.id.toLong(), id = id)
+    suspend fun reveal(identity: Identity, ctx: HttpContext, @PathVariable id: Long): String =
+        logic.adminRevealCardNo(op = OperatorContext.from(identity, ctx), id = id)
 }

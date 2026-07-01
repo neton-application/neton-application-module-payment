@@ -32,11 +32,12 @@ class WalletWithdrawLogic(
 
     /** 用户提交提现：同一事务内 建单 PENDING + 冻结资金 + ledger。fee 第一版为 0。 */
     suspend fun createWithdrawOrder(
-        userId: Long,
+        op: OperatorContext,
         bankCardId: Long,
         amount: Long,
         currency: String = "CNY",
     ): WalletWithdrawOrder {
+        val userId = op.operatorId
         requireParam(amount > 0) { "amount must be positive: $amount" }
         val wallet = payWallet.getWalletByUserId(userId)
             ?: walletNotFound("wallet not found for user $userId")
@@ -65,76 +66,77 @@ class WalletWithdrawLogic(
             )
             // 冻结校验 available = balance - freeze_price >= amount（freezeInTx 内做），并入本事务。
             payWallet.freezeInTx(wallet.id, amount, order.id, "withdraw freeze #${order.id}")
-            audit(order.id, userId, "create", -1, SM.PENDING, null)
+            audit(order.id, op, "create", -1, SM.PENDING, null)
             log.info("withdraw.created", mapOf("orderId" to order.id, "userId" to userId, "amount" to amount))
             WalletWithdrawOrderTable.get(order.id)!!
         }
     }
 
     /** 用户取消（仅本人、仅 PENDING）：解冻。 */
-    suspend fun cancel(userId: Long, orderId: Long): WalletWithdrawOrder = db.transaction {
+    suspend fun cancel(op: OperatorContext, orderId: Long): WalletWithdrawOrder = db.transaction {
+        val userId = op.operatorId
         val order = requireOrder(orderId)
         if (order.userId != userId) walletNotFound("not your order: $orderId")
         SM.ensureCanCancel(order.status)
         transit(orderId, order.status, SM.CANCELLED) { }
         payWallet.unfreezeInTx(order.walletId, order.amount, order.id, "withdraw unfreeze (cancel) #${order.id}")
-        audit(orderId, userId, "cancel", order.status, SM.CANCELLED, null)
+        audit(orderId, op, "cancel", order.status, SM.CANCELLED, null)
         requireOrder(orderId)
     }
 
     /** 后台审核通过（PENDING→APPROVED）。不动资金。 */
-    suspend fun approve(operatorId: Long, orderId: Long, remark: String?): WalletWithdrawOrder = db.transaction {
+    suspend fun approve(op: OperatorContext, orderId: Long, remark: String?): WalletWithdrawOrder = db.transaction {
         val order = requireOrder(orderId)
         SM.ensureCanApprove(order.status)
         transit(orderId, order.status, SM.APPROVED) {
-            set(WalletWithdrawOrder::reviewerId, operatorId)
+            set(WalletWithdrawOrder::reviewerId, op.operatorId)
             set(WalletWithdrawOrder::reviewRemark, remark)
             set(WalletWithdrawOrder::reviewedAt, nowMillis())
         }
-        audit(orderId, operatorId, "approve", order.status, SM.APPROVED, remark)
+        audit(orderId, op, "approve", order.status, SM.APPROVED, remark)
         requireOrder(orderId)
     }
 
     /** 后台驳回（PENDING→REJECTED）：解冻 + 客户可见原因。 */
-    suspend fun reject(operatorId: Long, orderId: Long, userVisibleReason: String): WalletWithdrawOrder = db.transaction {
+    suspend fun reject(op: OperatorContext, orderId: Long, userVisibleReason: String): WalletWithdrawOrder = db.transaction {
         val order = requireOrder(orderId)
         SM.ensureCanReject(order.status)
         transit(orderId, order.status, SM.REJECTED) {
-            set(WalletWithdrawOrder::reviewerId, operatorId)
+            set(WalletWithdrawOrder::reviewerId, op.operatorId)
             set(WalletWithdrawOrder::freezeRemarkUserVisible, userVisibleReason)
             set(WalletWithdrawOrder::reviewedAt, nowMillis())
         }
         payWallet.unfreezeInTx(order.walletId, order.amount, order.id, "withdraw unfreeze (reject) #${order.id}")
-        audit(orderId, operatorId, "reject", order.status, SM.REJECTED, userVisibleReason)
+        audit(orderId, op, "reject", order.status, SM.REJECTED, userVisibleReason)
         requireOrder(orderId)
     }
 
     /** 后台标记已打款（APPROVED/PROCESSING→PAID）：从冻结实扣。 */
-    suspend fun markPaid(operatorId: Long, orderId: Long, payoutTradeNo: String?): WalletWithdrawOrder = db.transaction {
+    suspend fun markPaid(op: OperatorContext, orderId: Long, payoutTradeNo: String?): WalletWithdrawOrder = db.transaction {
         val order = requireOrder(orderId)
         SM.ensureCanMarkPaid(order.status)
         transit(orderId, order.status, SM.PAID) {
-            set(WalletWithdrawOrder::reviewerId, operatorId)
+            set(WalletWithdrawOrder::reviewerId, op.operatorId)
             set(WalletWithdrawOrder::payoutTradeNo, payoutTradeNo)
             set(WalletWithdrawOrder::paidAt, nowMillis())
         }
         payWallet.deductFrozenInTx(order.walletId, order.amount, order.id, "withdraw paid #${order.id}")
-        audit(orderId, operatorId, "mark_paid", order.status, SM.PAID, payoutTradeNo)
+        audit(orderId, op, "mark_paid", order.status, SM.PAID, payoutTradeNo)
         requireOrder(orderId)
     }
 
     /** 后台标记失败（APPROVED/PROCESSING→FAILED）：解冻。 */
-    suspend fun markFailed(operatorId: Long, orderId: Long, failureReason: String): WalletWithdrawOrder = db.transaction {
+    suspend fun markFailed(op: OperatorContext, orderId: Long, failureReason: String): WalletWithdrawOrder = db.transaction {
         val order = requireOrder(orderId)
         SM.ensureCanMarkFailed(order.status)
         transit(orderId, order.status, SM.FAILED) {
-            set(WalletWithdrawOrder::reviewerId, operatorId)
+            set(WalletWithdrawOrder::reviewerId, op.operatorId)
             set(WalletWithdrawOrder::failureReason, failureReason)
             // 用户可见原因（App/H5 读 freezeRemarkUserVisible）；同 reject，失败原因也要让用户看到。
             set(WalletWithdrawOrder::freezeRemarkUserVisible, failureReason)
         }
         payWallet.unfreezeInTx(order.walletId, order.amount, order.id, "withdraw unfreeze (failed) #${order.id}")
-        audit(orderId, operatorId, "mark_failed", order.status, SM.FAILED, failureReason)
+        audit(orderId, op, "mark_failed", order.status, SM.FAILED, failureReason)
         requireOrder(orderId)
     }
 
@@ -208,7 +210,7 @@ class WalletWithdrawLogic(
 
     private suspend fun audit(
         orderId: Long,
-        operatorId: Long,
+        op: OperatorContext,
         action: String,
         beforeStatus: Int,
         afterStatus: Int,
@@ -217,11 +219,16 @@ class WalletWithdrawLogic(
         WalletWithdrawAuditLogTable.insert(
             WalletWithdrawAuditLog(
                 orderId = orderId,
-                operatorId = operatorId,
+                operatorId = op.operatorId,
                 action = action,
                 beforeStatus = beforeStatus,
                 afterStatus = afterStatus,
                 remark = remark,
+                operatorName = op.operatorName,
+                operatorRole = op.operatorRole,
+                ip = op.ip,
+                userAgent = op.userAgent,
+                traceId = op.traceId,
             )
         )
     }

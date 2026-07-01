@@ -4,6 +4,7 @@ import controller.admin.withdraw.dto.WithdrawApproveRequest
 import controller.admin.withdraw.dto.WithdrawMarkFailedRequest
 import controller.admin.withdraw.dto.WithdrawMarkPaidRequest
 import controller.admin.withdraw.dto.WithdrawRejectRequest
+import logic.OperatorContext
 import logic.WalletWithdrawLogic
 import model.WalletWithdrawOrder
 import neton.core.annotations.Body
@@ -13,6 +14,7 @@ import neton.core.annotations.PathVariable
 import neton.core.annotations.Permission
 import neton.core.annotations.Post
 import neton.core.annotations.Query
+import neton.core.http.HttpContext
 import neton.core.interfaces.Identity
 
 /**
@@ -41,24 +43,24 @@ class AdminWithdrawController(private val logic: WalletWithdrawLogic) {
     /** 审核通过（PENDING→APPROVED）。 */
     @Post("/approve/{id}")
     @Permission("pay:withdraw:approve")
-    suspend fun approve(identity: Identity, @PathVariable id: Long, @Body request: WithdrawApproveRequest): WalletWithdrawOrder =
-        logic.approve(identity.id.toLong(), id, request.remark)
+    suspend fun approve(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawApproveRequest): WalletWithdrawOrder =
+        logic.approve(OperatorContext.from(identity, ctx), id, request.remark)
 
     /** 驳回（PENDING→REJECTED + 解冻）。 */
     @Post("/reject/{id}")
     @Permission("pay:withdraw:reject")
-    suspend fun reject(identity: Identity, @PathVariable id: Long, @Body request: WithdrawRejectRequest): WalletWithdrawOrder =
-        logic.reject(identity.id.toLong(), id, request.reason)
+    suspend fun reject(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawRejectRequest): WalletWithdrawOrder =
+        logic.reject(OperatorContext.from(identity, ctx), id, request.reason)
 
     /** 标记已打款（APPROVED/PROCESSING→PAID + 从冻结实扣）。 */
     @Post("/mark-paid/{id}")
     @Permission("pay:withdraw:mark-paid")
-    suspend fun markPaid(identity: Identity, @PathVariable id: Long, @Body request: WithdrawMarkPaidRequest): WalletWithdrawOrder =
-        logic.markPaid(identity.id.toLong(), id, request.payoutTradeNo)
+    suspend fun markPaid(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawMarkPaidRequest): WalletWithdrawOrder =
+        logic.markPaid(OperatorContext.from(identity, ctx), id, request.payoutTradeNo)
 
     /** 标记失败（APPROVED/PROCESSING→FAILED + 解冻）。 */
     @Post("/mark-failed/{id}")
     @Permission("pay:withdraw:mark-failed")
-    suspend fun markFailed(identity: Identity, @PathVariable id: Long, @Body request: WithdrawMarkFailedRequest): WalletWithdrawOrder =
-        logic.markFailed(identity.id.toLong(), id, request.reason)
+    suspend fun markFailed(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawMarkFailedRequest): WalletWithdrawOrder =
+        logic.markFailed(OperatorContext.from(identity, ctx), id, request.reason)
 }

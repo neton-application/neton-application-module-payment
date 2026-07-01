@@ -3,7 +3,9 @@ package logic
 import kotlinx.serialization.Serializable
 import logic.crypto.BankCardCrypto
 import model.UserBankCard
+import model.PaySensitiveAuditLog
 import table.UserBankCardTable
+import table.PaySensitiveAuditLogTable
 import neton.database.dsl.*
 import neton.database.api.DbContext
 import neton.database.dbContext
@@ -123,14 +125,31 @@ class UserBankCardLogic(
      * 后台解密完整卡号（仅人工打款/审核用途）。**绝非静默**：每次都写审计日志。
      * 普通接口永不返回完整卡号。
      */
-    suspend fun adminRevealCardNo(operatorId: Long, id: Long): String {
+    suspend fun adminRevealCardNo(op: OperatorContext, id: Long): String {
         val card = UserBankCardTable.get(id)
             ?: walletNotFound("bank card not found: $id")
         val full = requireCrypto().decrypt(card.cardNoCiphertext, card.encryptedDataKey)
-        // 审计：who reveal 了 谁的 哪张卡。打款链路落地后改写入 wallet_withdraw_audit_logs。
+        // 不可抵赖（P0/V007）：落 DB 敏感操作审计行 + 保留非静默日志。
+        PaySensitiveAuditLogTable.insert(
+            PaySensitiveAuditLog(
+                operatorId = op.operatorId,
+                operatorName = op.operatorName,
+                operatorRole = op.operatorRole,
+                action = "BANK_CARD_REVEAL",
+                targetType = "BANK_CARD",
+                targetId = id,
+                targetUserId = card.userId,
+                ip = op.ip,
+                userAgent = op.userAgent,
+                traceId = op.traceId,
+            )
+        )
         log.warn(
             "bank-card.reveal.audit",
-            mapOf("operatorId" to operatorId, "cardId" to id, "cardUserId" to card.userId, "masked" to card.cardNoMasked),
+            mapOf(
+                "operatorId" to op.operatorId, "cardId" to id, "cardUserId" to card.userId,
+                "masked" to card.cardNoMasked, "traceId" to (op.traceId ?: ""),
+            ),
         )
         return full
     }
