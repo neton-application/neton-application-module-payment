@@ -2,6 +2,7 @@ package controller.admin.wallet
 
 import model.PayWallet
 import controller.admin.wallet.dto.UpdateWalletBalanceRequest
+import controller.admin.wallet.dto.WalletOverviewVO
 import logic.PayWalletLogic
 import neton.core.annotations.Controller
 import neton.core.annotations.Get
@@ -32,4 +33,9 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
     suspend fun updateBalance(@Body req: UpdateWalletBalanceRequest) {
         payWalletLogic.adjustBalance(req.userId, req.balance)
     }
+
+    /** 财务总览轻量版（P1）：钱包资金聚合 + 提现分状态聚合。 */
+    @Get("/overview")
+    @Permission("pay:wallet:overview")
+    suspend fun overview(): WalletOverviewVO = payWalletLogic.getFinanceOverview()
 }

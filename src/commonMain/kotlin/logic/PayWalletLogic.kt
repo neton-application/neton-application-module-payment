@@ -387,4 +387,52 @@ class PayWalletLogic(
         val wallet = requireWalletByUserId(userId)
         return getTransactionSummary(wallet.id)
     }
+
+    /**
+     * 财务总览轻量版（P1）：钱包资金聚合 + 提现分状态聚合。
+     * 走 DB SUM/COUNT 聚合（不 list 全表，随规模可扩展）；只 embed postgresql，用 `::bigint`
+     * 保证 SUM(numeric) 映射回 Long。金额单位=分。
+     */
+    suspend fun getFinanceOverview(): controller.admin.wallet.dto.WalletOverviewVO {
+        val w = db.fetchAll(
+            "SELECT COUNT(*) AS c, " +
+                "COALESCE(SUM(balance),0)::bigint AS bal, " +
+                "COALESCE(SUM(freeze_price),0)::bigint AS frz, " +
+                "COALESCE(SUM(total_recharge),0)::bigint AS rec, " +
+                "COALESCE(SUM(total_expense),0)::bigint AS exp " +
+                "FROM pay_wallets"
+        ).firstOrNull()
+        val walletCount = w?.long("c") ?: 0L
+        val totalBalance = w?.long("bal") ?: 0L
+        val totalFrozen = w?.long("frz") ?: 0L
+        val totalRecharge = w?.long("rec") ?: 0L
+        val totalExpense = w?.long("exp") ?: 0L
+
+        // 提现按状态聚合（pending=0 / approved=1 / paid=3）
+        val rows = db.fetchAll(
+            "SELECT status, COUNT(*) AS c, COALESCE(SUM(amount),0)::bigint AS amt " +
+                "FROM wallet_withdraw_orders GROUP BY status"
+        )
+        var pc = 0L; var pa = 0L; var ac = 0L; var aa = 0L; var dc = 0L; var da = 0L
+        for (r in rows) {
+            val c = r.long("c"); val amt = r.long("amt")
+            when (r.int("status")) {
+                WithdrawStateMachine.PENDING -> { pc = c; pa = amt }
+                WithdrawStateMachine.APPROVED -> { ac = c; aa = amt }
+                WithdrawStateMachine.PAID -> { dc = c; da = amt }
+            }
+        }
+
+        return controller.admin.wallet.dto.WalletOverviewVO(
+            walletCount = walletCount,
+            totalBalance = totalBalance,
+            totalFrozen = totalFrozen,
+            totalAvailable = totalBalance - totalFrozen,
+            totalRecharge = totalRecharge,
+            totalExpense = totalExpense,
+            withdrawPendingCount = pc, withdrawPendingAmount = pa,
+            withdrawApprovedCount = ac, withdrawApprovedAmount = aa,
+            withdrawPaidCount = dc, withdrawPaidAmount = da,
+        )
+    }
 }
