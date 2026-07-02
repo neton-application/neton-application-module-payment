@@ -28,6 +28,14 @@ class PayWalletLogic(
         const val BIZ_TYPE_WITHDRAW_UNFREEZE = 301
         const val BIZ_TYPE_WITHDRAW_DEDUCT = 302
         const val BIZ_TYPE_WITHDRAW_REFUND = 303
+
+        // 红包 + 转账（PrivChat Money Message, RP-2）。幂等索引见 V008。
+        const val BIZ_TYPE_RED_PACKET_CREATE_DEDUCT = 400  // 发红包扣发送方（biz_id=red_packet_id）
+        const val BIZ_TYPE_RED_PACKET_RECEIVE_INCOME = 401 // 领取入账（biz_id=claim_id）
+        const val BIZ_TYPE_RED_PACKET_REFUND = 402         // 过期退款回发送方（biz_id=red_packet_id）
+        const val BIZ_TYPE_TRANSFER_OUT = 500              // 转账扣发送方（biz_id=transfer_id）
+        const val BIZ_TYPE_TRANSFER_IN = 501               // 转账入账接收方（biz_id=transfer_id）
+        const val BIZ_TYPE_TRANSFER_REFUND = 502           // 转账异常回滚（biz_id=transfer_id）
     }
 
     private suspend fun requireWalletByUserId(userId: Long): PayWallet {
@@ -183,6 +191,39 @@ class PayWalletLogic(
                 balance = balance
             )
         )
+    }
+
+    /** (bizType,bizId) 是否已有账变（通用幂等检查，红包/转账/提现共用）。 */
+    suspend fun ledgerExists(bizType: Int, bizId: Long): Boolean = withdrawLedgerExists(bizType, bizId)
+
+    /**
+     * 通用带幂等的余额变更（红包/转账等 Money Message 复用，RP-2）。**在调用方事务内**执行，
+     * 让「订单 + 动钱 + 审计」合成同一原子事务。
+     * - (bizType,bizId) 已存在 → no-op（幂等，防重复入账/扣款，并发由 V008 唯一索引兜底）。
+     * - price<0 借记受可用余额保护（不侵占冻结资金）；余额不足 → 409（非 500）。
+     * - **不改** totalRecharge/totalExpense（红包/转账非充值非消费计数；账变真相以 ledger 为准）。
+     */
+    suspend fun applyMoneyMoveInTx(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
+        if (withdrawLedgerExists(bizType, bizId)) return
+        val wallet = PayWalletTable.get(walletId) ?: walletNotFound("Wallet not found: $walletId")
+        val newBalance = wallet.balance + price
+        requireState(newBalance >= 0) { "Insufficient balance for wallet: $walletId" }
+        if (price < 0) {
+            requireState(PayWalletFreezeRules.debitKeepsFrozenSafe(newBalance, wallet.freezePrice)) {
+                "Insufficient available balance (frozen funds protected) for wallet: $walletId"
+            }
+        }
+        PayWalletTable.update(wallet.copy(balance = newBalance))
+        insertWithdrawLedger(walletId, bizType, bizId, title, price = price, balance = newBalance)
+        log.info("wallet.money.move", mapOf("walletId" to walletId, "price" to price, "bizType" to bizType, "bizId" to bizId))
+    }
+
+    /** 取用户钱包（无则懒创建零钱包，红包领取/转账入账目标复用）。在调用方事务内安全。 */
+    suspend fun getOrCreateWalletInTx(userId: Long): PayWallet {
+        PayWalletTable.oneWhere { PayWallet::userId eq userId }?.let { return it }
+        val created = PayWalletTable.insert(PayWallet(userId = userId))
+        log.info("wallet.lazy_created", mapOf("userId" to userId, "walletId" to created.id))
+        return created
     }
 
     suspend fun pageWallets(

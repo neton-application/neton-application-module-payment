@@ -17,6 +17,12 @@ object WalletBizType {
     const val WITHDRAW_UNFREEZE = 301
     const val WITHDRAW_DEDUCT = 302
     const val WITHDRAW_REFUND = 303
+    const val RED_PACKET_CREATE_DEDUCT = 400
+    const val RED_PACKET_RECEIVE_INCOME = 401
+    const val RED_PACKET_REFUND = 402
+    const val TRANSFER_OUT = 500
+    const val TRANSFER_IN = 501
+    const val TRANSFER_REFUND = 502
 
     /** 收支方向：+1 收入 / -1 支出 / 0 中性（冻结/解冻不改变余额净值）。以 ledger price 符号为准。 */
     fun direction(price: Long): Int = when {
@@ -34,6 +40,12 @@ object WalletBizType {
         WITHDRAW_UNFREEZE -> "withdraw_unfreeze"
         WITHDRAW_DEDUCT -> "withdraw_deduct"
         WITHDRAW_REFUND -> "withdraw_refund"
+        RED_PACKET_CREATE_DEDUCT -> "red_packet_send"
+        RED_PACKET_RECEIVE_INCOME -> "red_packet_claim"
+        RED_PACKET_REFUND -> "red_packet_refund"
+        TRANSFER_OUT -> "transfer_out"
+        TRANSFER_IN -> "transfer_in"
+        TRANSFER_REFUND -> "transfer_refund"
         else -> "other"
     }
 }
