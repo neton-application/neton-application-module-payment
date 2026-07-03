@@ -1,9 +1,11 @@
 package logic
 
 import dto.PageResponse
+import model.MoneyMessageNotificationOutbox
 import model.PaySensitiveAuditLog
 import model.RedPacketClaim
 import model.RedPacketOrder
+import table.MoneyMessageNotificationOutboxTable
 import table.PaySensitiveAuditLogTable
 import table.RedPacketClaimTable
 import table.RedPacketOrderTable
@@ -11,6 +13,8 @@ import neton.database.api.DbContext
 import neton.database.dbContext
 import neton.database.dsl.*
 import neton.logging.Logger
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * 红包（RP-2/RP-3，PrivChat Money Message）。资金真相在订单/领取记录/wallet/ledger/audit；
@@ -34,9 +38,41 @@ class RedPacketLogic(
         const val STATUS_EXPIRED = 2
         const val STATUS_REFUNDING = 3
         const val DEFAULT_TTL_MS = 24L * 60 * 60 * 1000 // 24h
+
+        // RP-7-A 通知事件类型（写 money_message_notification_outbox）。
+        const val EVENT_RED_PACKET_RECEIVED = "RED_PACKET_RECEIVED"
+        const val EVENT_RED_PACKET_EMPTY = "RED_PACKET_EMPTY"
+        const val EVENT_RED_PACKET_EXPIRED = "RED_PACKET_EXPIRED"
     }
 
     private fun now() = kotlin.time.Clock.System.now().toEpochMilliseconds()
+
+    private fun amountText(fen: Long): String {
+        val neg = fen < 0; val a = if (neg) -fen else fen
+        val cents = a % 100
+        return "${if (neg) "-" else ""}¥${a / 100}.${if (cents < 10) "0$cents" else "$cents"}"
+    }
+
+    /** 通知 outbox 入队（RP-7-A）。在调用方事务内执行 → 与资金动作同事务原子；status=PENDING 待 adapter 消费。 */
+    private suspend fun enqueueOutbox(
+        eventType: String, order: RedPacketOrder, relatedUserId: Long, targetUserId: Long, payload: String,
+    ) {
+        val ts = now()
+        MoneyMessageNotificationOutboxTable.insert(
+            MoneyMessageNotificationOutbox(
+                eventType = eventType,
+                channelId = order.channelId,
+                scene = order.scene,
+                redPacketId = order.id,
+                relatedUserId = relatedUserId,
+                targetUserId = targetUserId,
+                payloadJson = payload,
+                status = 0, // PENDING
+                createdAt = ts,
+                updatedAt = ts,
+            )
+        )
+    }
 
     /** 发红包：校验 available≥total，一事务内建单 + 扣发送方全额(400) + 审计。返回 redPacketId。 */
     suspend fun send(
@@ -138,6 +174,36 @@ class RedPacketLogic(
             PayWalletLogic.BIZ_TYPE_RED_PACKET_RECEIVE_INCOME, claim.id, "red_packet_claim"
         )
         audit("RED_PACKET_CLAIM", redPacketId, userId, "amount=$claimAmount claimId=${claim.id}")
+
+        // RP-7-A：同事务写通知 outbox。领取 → RECEIVED；若领完 → 再补 EMPTY。
+        val claimedCount = order.totalCount - nextCount
+        enqueueOutbox(
+            EVENT_RED_PACKET_RECEIVED, order, relatedUserId = userId, targetUserId = order.senderUserId,
+            payload = buildJsonObject {
+                put("redPacketId", order.id.toString())
+                put("channelId", order.channelId)
+                put("claimerUserId", userId)
+                put("senderUserId", order.senderUserId)
+                put("claimAmount", claimAmount)
+                put("amountText", amountText(claimAmount))
+                put("claimedCount", claimedCount)
+                put("totalCount", order.totalCount)
+                put("status", if (finished) "FINISHED" else "ACTIVE")
+            }.toString(),
+        )
+        if (finished) {
+            enqueueOutbox(
+                EVENT_RED_PACKET_EMPTY, order, relatedUserId = order.senderUserId, targetUserId = 0,
+                payload = buildJsonObject {
+                    put("redPacketId", order.id.toString())
+                    put("channelId", order.channelId)
+                    put("senderUserId", order.senderUserId)
+                    put("claimedCount", order.totalCount)
+                    put("totalCount", order.totalCount)
+                    put("status", "FINISHED")
+                }.toString(),
+            )
+        }
         log.info("red_packet.claimed", mapOf("id" to redPacketId, "user" to userId, "amount" to claimAmount))
         claim
     }
@@ -185,6 +251,19 @@ class RedPacketLogic(
             set(RedPacketOrder::finishedAt, now())
         }
         audit("RED_PACKET_REFUND", order.id, order.senderUserId, "refund=$remaining")
+
+        // RP-7-A：过期退款 → EXPIRED 通知 outbox（同事务）。
+        enqueueOutbox(
+            EVENT_RED_PACKET_EXPIRED, order, relatedUserId = order.senderUserId, targetUserId = 0,
+            payload = buildJsonObject {
+                put("redPacketId", order.id.toString())
+                put("channelId", order.channelId)
+                put("senderUserId", order.senderUserId)
+                put("refundAmount", remaining)
+                put("amountText", amountText(remaining))
+                put("status", "EXPIRED")
+            }.toString(),
+        )
         log.info("red_packet.refunded", mapOf("id" to order.id, "refund" to remaining))
         return true
     }

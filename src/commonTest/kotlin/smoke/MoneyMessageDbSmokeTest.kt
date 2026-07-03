@@ -4,9 +4,11 @@ import kotlinx.coroutines.runBlocking
 import logic.MoneyTransferLogic
 import logic.PayWalletLogic
 import logic.RedPacketLogic
+import model.MoneyMessageNotificationOutbox
 import model.PayWallet
 import model.PayWalletTransaction
 import model.RedPacketOrder
+import table.MoneyMessageNotificationOutboxTable
 import neton.core.config.getEnv
 import neton.core.http.HttpException
 import neton.database.adapter.sqlx.SqlxDatabase
@@ -125,12 +127,41 @@ class MoneyMessageDbSmokeTest {
             assertEquals(47_000L, wallet(S).balance)
             assertEquals(13_000L, wallet(A).balance)
 
-            println("[RP_DB_SMOKE] PASS: send/claim×3/drain/dup/expire-refund/transfer/zero-sum/conservation verified (ws=${ws.id})")
+            // ======== 8. RP-7-A 通知 outbox（同事务写入，PENDING）========
+            // rp1 领完：3 RECEIVED + 1 EMPTY；rp2 领1+过期：1 RECEIVED + 1 EXPIRED。
+            assertEquals(3, outbox(rp1.id, RedPacketLogic.EVENT_RED_PACKET_RECEIVED), "rp1 3× RECEIVED outbox")
+            assertEquals(1, outbox(rp1.id, RedPacketLogic.EVENT_RED_PACKET_EMPTY), "rp1 1× EMPTY outbox")
+            assertEquals(0, outbox(rp1.id, RedPacketLogic.EVENT_RED_PACKET_EXPIRED), "rp1 无 EXPIRED")
+            assertEquals(1, outbox(rp2.id, RedPacketLogic.EVENT_RED_PACKET_RECEIVED), "rp2 1× RECEIVED outbox")
+            assertEquals(1, outbox(rp2.id, RedPacketLogic.EVENT_RED_PACKET_EXPIRED), "rp2 1× EXPIRED outbox")
+            assertTrue(allOutboxPending(), "所有 outbox 行 status=PENDING（RP-7-A 只写不消费）")
+            // payload 含 channelId + redPacketId（adapter 消费依据）。
+            val anyReceived = MoneyMessageNotificationOutboxTable.query {
+                where { MoneyMessageNotificationOutbox::eventType eq RedPacketLogic.EVENT_RED_PACKET_RECEIVED }
+            }.list().first()
+            assertTrue(anyReceived.payloadJson.contains("\"channelId\"") && anyReceived.payloadJson.contains("\"redPacketId\""), "payload 含 channelId+redPacketId")
+
+            println("[RP_DB_SMOKE] PASS: send/claim×3/drain/dup/expire-refund/transfer/zero-sum/conservation/outbox verified (ws=${ws.id})")
         }
     }
 
     private suspend fun wallet(uid: Long): PayWallet =
         PayWalletTable.oneWhere { PayWallet::userId eq uid } ?: error("wallet not found: $uid")
+
+    private suspend fun outbox(rpId: Long, eventType: String): Int =
+        MoneyMessageNotificationOutboxTable.query {
+            where {
+                and(
+                    MoneyMessageNotificationOutbox::redPacketId eq rpId,
+                    MoneyMessageNotificationOutbox::eventType eq eventType,
+                )
+            }
+        }.list().size
+
+    private suspend fun allOutboxPending(): Boolean =
+        MoneyMessageNotificationOutboxTable.query {
+            where { MoneyMessageNotificationOutbox::id gt 0 }
+        }.list().all { it.status == 0 }
 
     private suspend fun ledger(bizType: Int, bizId: Long): PayWalletTransaction? =
         PayWalletTransactionTable.oneWhere {
