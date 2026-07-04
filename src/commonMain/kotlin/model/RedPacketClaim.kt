@@ -9,7 +9,7 @@ import neton.database.annotations.Id
  * 每条领取对应一笔 ledger 401(biz_id=claim.id)。金额 bigint(分)，时间 epoch ms。
  */
 @Serializable
-@Table("red_packet_claims")
+@Table("pay_red_packet_claims")
 data class RedPacketClaim(
     @Id
     val id: Long = 0,

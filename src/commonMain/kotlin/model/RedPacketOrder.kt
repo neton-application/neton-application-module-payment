@@ -10,7 +10,7 @@ import neton.database.annotations.Id
  * MVP：普通红包（均分、先到先得）；`type=1` 拼手气预留。金额 bigint(分)，时间 epoch ms。
  */
 @Serializable
-@Table("red_packet_orders")
+@Table("pay_red_packet_orders")
 data class RedPacketOrder(
     @Id
     val id: Long = 0,

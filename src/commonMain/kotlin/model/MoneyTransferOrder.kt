@@ -10,7 +10,7 @@ import neton.database.annotations.Id
  * 金额 bigint(分)，时间 epoch ms。
  */
 @Serializable
-@Table("money_transfer_orders")
+@Table("pay_money_transfer_orders")
 data class MoneyTransferOrder(
     @Id
     val id: Long = 0,

@@ -10,7 +10,7 @@ import neton.database.annotations.Id
  * payload_json 由 payment 产出（IDs + 金额 + 进度 + 状态），用户名等展示字段由 adapter 解析。
  */
 @Serializable
-@Table("money_message_notification_outbox")
+@Table("pay_money_message_notification_outbox")
 data class MoneyMessageNotificationOutbox(
     @Id
     val id: Long = 0,

@@ -4,11 +4,11 @@
 -- 不影响资金事务（资金真相在 payment，通知是可重试副作用）。金额 bigint(分)，时间 epoch ms。
 SET search_path = public;
 
-CREATE SEQUENCE IF NOT EXISTS public.money_message_notification_outbox_id_seq
+CREATE SEQUENCE IF NOT EXISTS public.pay_money_message_notification_outbox_id_seq
     START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
 
-CREATE TABLE IF NOT EXISTS public.money_message_notification_outbox (
-    id bigint NOT NULL DEFAULT nextval('public.money_message_notification_outbox_id_seq'::regclass),
+CREATE TABLE IF NOT EXISTS public.pay_money_message_notification_outbox (
+    id bigint NOT NULL DEFAULT nextval('public.pay_money_message_notification_outbox_id_seq'::regclass),
     -- RED_PACKET_RECEIVED / RED_PACKET_EMPTY / RED_PACKET_EXPIRED
     event_type character varying(32) NOT NULL,
     channel_id character varying(64) DEFAULT '' NOT NULL,
@@ -27,13 +27,13 @@ CREATE TABLE IF NOT EXISTS public.money_message_notification_outbox (
     created_at bigint DEFAULT 0 NOT NULL,
     updated_at bigint DEFAULT 0 NOT NULL,
     sent_at bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT money_message_notification_outbox_pkey PRIMARY KEY (id)
+    CONSTRAINT pay_money_message_notification_outbox_pkey PRIMARY KEY (id)
 );
-ALTER SEQUENCE public.money_message_notification_outbox_id_seq
-    OWNED BY public.money_message_notification_outbox.id;
+ALTER SEQUENCE public.pay_money_message_notification_outbox_id_seq
+    OWNED BY public.pay_money_message_notification_outbox.id;
 
 -- adapter 拉取待发：status=PENDING 且到重试时间，按 id 升序（FIFO）。
 CREATE INDEX IF NOT EXISTS idx_mmno_pending
-    ON public.money_message_notification_outbox (status, next_retry_at, id);
+    ON public.pay_money_message_notification_outbox (status, next_retry_at, id);
 CREATE INDEX IF NOT EXISTS idx_mmno_red_packet
-    ON public.money_message_notification_outbox (red_packet_id, id);
+    ON public.pay_money_message_notification_outbox (red_packet_id, id);

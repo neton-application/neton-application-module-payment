@@ -47,7 +47,7 @@ class RedPacketLogic(
         // 并发领取乐观锁 CAS 冲突内部重试上限（超过才把 409 抛给用户）。
         const val MAX_CLAIM_RETRY = 5
 
-        // RP-7-A 通知事件类型（写 money_message_notification_outbox）。
+        // RP-7-A 通知事件类型（写 pay_money_message_notification_outbox）。
         const val EVENT_RED_PACKET_RECEIVED = "RED_PACKET_RECEIVED"
         const val EVENT_RED_PACKET_EMPTY = "RED_PACKET_EMPTY"
         const val EVENT_RED_PACKET_EXPIRED = "RED_PACKET_EXPIRED"
