@@ -177,7 +177,24 @@ class MoneyMessageDbSmokeTest {
             assertEquals(0L, sumLedgerForRedPacket(lucky.id), "拼手气红包托管零和")
             assertEquals(1_000L, L.sumOf { wallet(it).balance }, "拼手气 5 人入账合计 = 1000（资金守恒）")
 
-            println("[RP_DB_SMOKE] PASS: send/claim×3/drain/dup/expire-refund/transfer/zero-sum/conservation/outbox/lucky(10y÷5,best-luck) verified (ws=${ws.id})")
+            // ======== 10. 普通红包 10 元 / 5 人（每人恰好 2 元，均分）========
+            val M = listOf(990010021L, 990010022L, 990010023L, 990010024L, 990010025L)
+            val normal = redPacket.send(S, "ch4", 1, RedPacketLogic.TYPE_NORMAL, 1_000, 5, null)
+            M.forEach { uid -> assertEquals(200L, redPacket.claim(normal.id, uid).amount, "普通红包 10元/5人 每人 2 元") }
+            assertEquals(RedPacketLogic.STATUS_FINISHED, RedPacketOrderTable.get(normal.id)!!.status, "普通红包领完 FINISHED")
+            assertEquals(0L, sumLedgerForRedPacket(normal.id), "普通红包零和")
+
+            // ======== 11. 拼手气边界：5 分/5 人（每人恰好 1 分）+ 拒绝 4 分/5 人（金额<人数）========
+            val N = listOf(990010031L, 990010032L, 990010033L, 990010034L, 990010035L)
+            val tiny = redPacket.send(S, "ch5", 1, RedPacketLogic.TYPE_LUCKY, 5, 5, null)
+            N.forEach { uid -> assertEquals(1L, redPacket.claim(tiny.id, uid).amount, "5分/5人拼手气每人恰好 1 分") }
+            assertEquals(RedPacketLogic.STATUS_FINISHED, RedPacketOrderTable.get(tiny.id)!!.status)
+            assertEquals(0L, sumLedgerForRedPacket(tiny.id), "5分红包零和")
+            assertFailsWith<HttpException>("4分/5人应拒绝创建（每份不足 1 分）") {
+                redPacket.send(S, "ch5", 1, RedPacketLogic.TYPE_LUCKY, 4, 5, null)
+            }
+
+            println("[RP_DB_SMOKE] PASS: send/claim×3/drain/dup/expire-refund/transfer/zero-sum/conservation/outbox/lucky(10y÷5,best-luck)/normal(10y÷5=2y)/boundary(5f÷5=1f,reject 4f÷5) verified (ws=${ws.id})")
         }
     }
 
