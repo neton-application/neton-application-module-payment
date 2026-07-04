@@ -141,7 +141,43 @@ class MoneyMessageDbSmokeTest {
             }.list().first()
             assertTrue(anyReceived.payloadJson.contains("\"channelId\"") && anyReceived.payloadJson.contains("\"redPacketId\""), "payload 含 channelId+redPacketId")
 
-            println("[RP_DB_SMOKE] PASS: send/claim×3/drain/dup/expire-refund/transfer/zero-sum/conservation/outbox verified (ws=${ws.id})")
+            // ======== 9. 拼手气红包（type=1）：10 元 / 5 人，二倍均值随机分配 ========
+            val L = listOf(990010011L, 990010012L, 990010013L, 990010014L, 990010015L)
+            val sBeforeLucky = wallet(S).balance
+            val lucky = redPacket.send(S, "ch3", 1, RedPacketLogic.TYPE_LUCKY, 1_000, 5, "拼手气")
+            assertEquals(sBeforeLucky - 1_000, wallet(S).balance, "拼手气发红包扣全额")
+            assertEquals(RedPacketLogic.TYPE_LUCKY, RedPacketOrderTable.get(lucky.id)!!.type, "type=LUCKY 落库")
+            val luckyAmounts = mutableListOf<Long>()
+            L.forEach { uid ->
+                val cl = redPacket.claim(lucky.id, uid)
+                assertTrue(cl.amount >= 1L, "拼手气每人至少 1 分（实际 ${cl.amount}）")
+                luckyAmounts += cl.amount
+                val o = RedPacketOrderTable.get(lucky.id)!!
+                assertTrue(o.remainingAmount >= 0L, "剩余金额不为负")
+                assertTrue(o.remainingCount >= 0, "剩余个数不为负")
+                // 不变量：未领完时 remainingAmount ≥ remainingCount（保证其余人各拿 ≥1 分）。
+                if (o.remainingCount > 0) assertTrue(o.remainingAmount >= o.remainingCount, "剩余额需覆盖剩余人数×1分")
+            }
+            assertEquals(1_000L, luckyAmounts.sum(), "拼手气总领取额精确等于总额（无超领/无漏发）")
+            val luckyAfter = RedPacketOrderTable.get(lucky.id)!!
+            assertEquals(RedPacketLogic.STATUS_FINISHED, luckyAfter.status, "5 人领完 FINISHED")
+            assertEquals(0L, luckyAfter.remainingAmount)
+            assertEquals(0, luckyAfter.remainingCount)
+            // 抢完 + 重复领取都 409。
+            assertFailsWith<HttpException>("拼手气抢完应拒") { redPacket.claim(lucky.id, 990010016L) }
+            assertFailsWith<HttpException>("拼手气重复领应拒") { redPacket.claim(lucky.id, L[0]) }
+            // 最佳手气（读时计算）：最大金额、并列取最早 claim → 唯一可判定。
+            val luckyClaims = table.RedPacketClaimTable.query {
+                where { model.RedPacketClaim::redPacketId eq lucky.id }
+            }.list()
+            assertEquals(5, luckyClaims.size, "拼手气 5 条领取记录")
+            val bestAmount = luckyClaims.maxOf { it.amount }
+            val bestClaim = luckyClaims.filter { it.amount == bestAmount }.minByOrNull { it.id }!!
+            assertTrue(bestClaim.amount >= 1L && luckyClaims.count { it.amount == bestAmount } >= 1, "最佳手气可判定（最大金额=${bestClaim.amount}）")
+            assertEquals(0L, sumLedgerForRedPacket(lucky.id), "拼手气红包托管零和")
+            assertEquals(1_000L, L.sumOf { wallet(it).balance }, "拼手气 5 人入账合计 = 1000（资金守恒）")
+
+            println("[RP_DB_SMOKE] PASS: send/claim×3/drain/dup/expire-refund/transfer/zero-sum/conservation/outbox/lucky(10y÷5,best-luck) verified (ws=${ws.id})")
         }
     }
 

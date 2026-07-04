@@ -15,12 +15,13 @@ import neton.database.dsl.*
 import neton.logging.Logger
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.random.Random
 
 /**
  * 红包（RP-2/RP-3，PrivChat Money Message）。资金真相在订单/领取记录/wallet/ledger/audit；
  * 消息只搬运引用（见 RED_PACKET_AND_TRANSFER_DESIGN_SPEC）。
  *
- * MVP：普通红包（均分、先到先得、过期退款）；拼手气(type=1) 预留未实现。
+ * 普通红包（type=0，均分先到先得）+ 拼手气红包（type=1，二倍均值法随机分配 + 最佳手气读时计算）；均支持过期退款。
  * 每个动作单事务 + `PayWalletLogic.applyMoneyMoveInTx` 幂等动钱，合「订单 + 动钱 + 审计」为原子。
  * 防超领双闸：① 条件更新 `remaining_count=observed`（乐观锁原子递减）② (red_packet_id,user_id) 唯一键。
  */
@@ -39,6 +40,10 @@ class RedPacketLogic(
         const val STATUS_REFUNDING = 3
         const val DEFAULT_TTL_MS = 24L * 60 * 60 * 1000 // 24h
 
+        // 红包类型：0=普通均分（先到先得等额）；1=拼手气（随机分配，最佳手气）。
+        const val TYPE_NORMAL = 0
+        const val TYPE_LUCKY = 1
+
         // RP-7-A 通知事件类型（写 money_message_notification_outbox）。
         const val EVENT_RED_PACKET_RECEIVED = "RED_PACKET_RECEIVED"
         const val EVENT_RED_PACKET_EMPTY = "RED_PACKET_EMPTY"
@@ -51,6 +56,19 @@ class RedPacketLogic(
         val neg = fen < 0; val a = if (neg) -fen else fen
         val cents = a % 100
         return "${if (neg) "-" else ""}¥${a / 100}.${if (cents < 10) "0$cents" else "$cents"}"
+    }
+
+    /**
+     * 拼手气分配（二倍均值法 + 保底）。仅在 remainingCount>1 时调用（最后一人在调用方直接拿余额）。
+     * 不变量：`1 ≤ amount ≤ remainingAmount-(remainingCount-1)` —— 保证其余每人至少 1 分，
+     * 从而领后 `remainingAmount' ≥ remainingCount'`，递归到最后一人恰好拿走余额，Σ 精确等于 total。
+     * 前置（由 send 校验 totalAmount≥totalCount + 上述不变量维持）：remainingAmount ≥ remainingCount。
+     */
+    private fun luckyDraw(remainingAmount: Long, remainingCount: Int): Long {
+        val reserve = (remainingCount - 1).toLong()               // 其余每人至少保留 1 分
+        val meanX2 = remainingAmount / remainingCount * 2          // 二倍均值上界（防止前面的人拿太多）
+        val maxDraw = minOf(meanX2, remainingAmount - reserve).coerceAtLeast(1L)
+        return if (maxDraw <= 1L) 1L else Random.nextLong(1L, maxDraw + 1L)  // [1, maxDraw]
     }
 
     /** 通知 outbox 入队（RP-7-A）。在调用方事务内执行 → 与资金动作同事务原子；status=PENDING 待 adapter 消费。 */
@@ -87,7 +105,7 @@ class RedPacketLogic(
         requireParam(totalAmount > 0) { "totalAmount must be positive: $totalAmount" }
         requireParam(totalCount in 1..1000) { "totalCount out of range: $totalCount" }
         requireParam(totalAmount >= totalCount) { "totalAmount must cover 1 fen per share" }
-        requireParam(type == 0) { "only normal red packet supported in MVP (type=0)" }
+        requireParam(type == TYPE_NORMAL || type == TYPE_LUCKY) { "red packet type must be 0 (normal) or 1 (lucky): $type" }
         val senderWallet = wallet.getWalletByUserId(senderUserId)
             ?: walletNotFound("wallet not found for user $senderUserId")
 
@@ -97,7 +115,7 @@ class RedPacketLogic(
                 senderUserId = senderUserId,
                 channelId = channelId,
                 scene = scene,
-                type = 0,
+                type = type,
                 totalAmount = totalAmount,
                 totalCount = totalCount,
                 remainingAmount = totalAmount,
@@ -140,9 +158,15 @@ class RedPacketLogic(
         }
         if (existed != null) walletConflict("already claimed: $redPacketId")
 
-        // 均分（先到先得）：最后一份拿走余额（含整除余数），保证 Σ=total。
-        val claimAmount = if (order.remainingCount == 1) order.remainingAmount
-        else order.totalAmount / order.totalCount
+        // 分配金额（金额由观测快照算出，与下面乐观锁 remaining_count 守卫同快照 → 并发下要么整体成功要么冲突重试，
+        // 绝不基于陈旧快照落库，因此不会超领/负剩余）。最后一份一律拿走余额，保证 Σ=total。
+        //  · 普通(type=0)：等额 total/count；
+        //  · 拼手气(type=1)：二倍均值法随机分配（每人≥1分，其余人保底）。
+        val claimAmount = when {
+            order.remainingCount == 1 -> order.remainingAmount
+            order.type == TYPE_LUCKY -> luckyDraw(order.remainingAmount, order.remainingCount)
+            else -> order.totalAmount / order.totalCount
+        }
         val nextCount = order.remainingCount - 1
         val nextRemaining = order.remainingAmount - claimAmount
         val finished = nextCount == 0
