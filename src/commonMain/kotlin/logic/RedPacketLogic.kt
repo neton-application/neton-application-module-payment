@@ -44,6 +44,9 @@ class RedPacketLogic(
         const val TYPE_NORMAL = 0
         const val TYPE_LUCKY = 1
 
+        // 并发领取乐观锁 CAS 冲突内部重试上限（超过才把 409 抛给用户）。
+        const val MAX_CLAIM_RETRY = 5
+
         // RP-7-A 通知事件类型（写 money_message_notification_outbox）。
         const val EVENT_RED_PACKET_RECEIVED = "RED_PACKET_RECEIVED"
         const val EVENT_RED_PACKET_EMPTY = "RED_PACKET_EMPTY"
@@ -136,11 +139,33 @@ class RedPacketLogic(
         order
     }
 
+    /** 乐观锁 CAS 未命中（并发抢红包高频正常事件）——内部信号，用于自动重试，不外泄为业务错误。 */
+    private class OptimisticClaimConflict : RuntimeException()
+
     /**
-     * 领红包：一事务内乐观锁原子递减 remaining + 唯一键防重领 + 入账(401)。
-     * 已抢完/已领过/已过期 → 409（不落 500）。过期先惰性结算退款再拒。
+     * 领红包。多人并发抢红包时乐观锁 CAS 冲突是**正常高频事件**，不应直接把 409 抛给用户：
+     * 内部对 CAS 未命中自动重试（每次重读订单快照重算），仅真正抢完/已领过/已过期才返回业务错误。
+     * 资金安全不变：每次尝试都是一个独立的「快照→守卫更新」原子事务，绝不基于陈旧快照落库。
      */
-    suspend fun claim(redPacketId: Long, userId: Long): RedPacketClaim = db.transaction {
+    suspend fun claim(redPacketId: Long, userId: Long): RedPacketClaim {
+        var attempt = 0
+        while (true) {
+            try {
+                return claimOnce(redPacketId, userId)
+            } catch (e: OptimisticClaimConflict) {
+                if (++attempt >= MAX_CLAIM_RETRY) {
+                    log.warn("red_packet.claim.conflict_exhausted", mapOf("id" to redPacketId, "attempts" to attempt))
+                    walletConflict("red packet claim conflict; please retry: $redPacketId")
+                }
+            }
+        }
+    }
+
+    /**
+     * 单次领取尝试：一事务内乐观锁原子递减 remaining + 唯一键防重领 + 入账(401)。
+     * 已抢完/已领过/已过期 → 409（不落 500）。过期先惰性结算退款再拒。CAS 未命中 → OptimisticClaimConflict（外层重试）。
+     */
+    private suspend fun claimOnce(redPacketId: Long, userId: Long): RedPacketClaim = db.transaction {
         val order = RedPacketOrderTable.get(redPacketId)
             ?: walletNotFound("red packet not found: $redPacketId")
 
@@ -186,7 +211,7 @@ class RedPacketLogic(
             set(RedPacketOrder::status, if (finished) STATUS_FINISHED else STATUS_ACTIVE)
             if (finished) set(RedPacketOrder::finishedAt, now())
         }
-        if (updated == 0L) walletConflict("red packet claim conflict; please retry: $redPacketId")
+        if (updated == 0L) throw OptimisticClaimConflict()
 
         val claim = RedPacketClaimTable.insert(
             RedPacketClaim(redPacketId = redPacketId, userId = userId, amount = claimAmount, claimedAt = now())
