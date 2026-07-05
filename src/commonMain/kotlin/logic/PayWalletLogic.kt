@@ -274,7 +274,8 @@ class PayWalletLogic(
         packageId: Long? = null
     ): Long {
         require(payPrice <= totalPrice) { "payPrice ($payPrice) must not exceed totalPrice ($totalPrice)" }
-        val wallet = requireWalletByUserId(userId)
+        // 充值是资金入口：无钱包用户懒创建（与红包领取/转账入账同语义），不能 500 挡住首充。
+        val wallet = getWalletByUserId(userId) ?: db.transaction { getOrCreateWalletInTx(userId) }
         val recharge = PayWalletRecharge(
             walletId = wallet.id,
             totalPrice = totalPrice,
@@ -410,7 +411,9 @@ class PayWalletLogic(
         size: Int,
         bizType: Int? = null
     ): PageResponse<PayWalletTransaction> {
-        val wallet = requireWalletByUserId(userId)
+        // 只读路径：钱包懒创建（首次动钱才建行），新用户无钱包 = 无账变，返回空页而非 500。
+        val wallet = getWalletByUserId(userId)
+            ?: return PageResponse(emptyList(), 0, page, size, 0)
         return pageTransactions(page, size, wallet.id, bizType)
     }
 
@@ -420,12 +423,15 @@ class PayWalletLogic(
         size: Int,
         payStatus: Int? = null
     ): PageResponse<PayWalletRecharge> {
-        val wallet = requireWalletByUserId(userId)
+        // 只读路径：无钱包 = 无充值单，返回空页（钱包懒创建语义，见 pageTransactionsForUser）。
+        val wallet = getWalletByUserId(userId)
+            ?: return PageResponse(emptyList(), 0, page, size, 0)
         return pageRecharges(page, size, wallet.id, payStatus)
     }
 
     suspend fun getTransactionSummaryForUser(userId: Long): Pair<Long, Long> {
-        val wallet = requireWalletByUserId(userId)
+        // 只读路径：无钱包 = 零支出零充值（钱包懒创建语义）。
+        val wallet = getWalletByUserId(userId) ?: return 0L to 0L
         return getTransactionSummary(wallet.id)
     }
 
