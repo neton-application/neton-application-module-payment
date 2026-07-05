@@ -51,6 +51,9 @@ class RedPacketLogic(
         const val EVENT_RED_PACKET_RECEIVED = "RED_PACKET_RECEIVED"
         const val EVENT_RED_PACKET_EMPTY = "RED_PACKET_EMPTY"
         const val EVENT_RED_PACKET_EXPIRED = "RED_PACKET_EXPIRED"
+        // RP-12：卡片注入事件（send 时写，服务端注入红包卡片消息，ref=RED_PACKET:{orderId} 幂等）。
+        const val EVENT_RED_PACKET_CARD = "RED_PACKET_CARD"
+        const val REF_RED_PACKET = "RED_PACKET"
     }
 
     private fun now() = kotlin.time.Clock.System.now().toEpochMilliseconds()
@@ -95,6 +98,27 @@ class RedPacketLogic(
         )
     }
 
+    /**
+     * RP-12 卡片注入 outbox 入队（send 时，同事务）。带 `(event_type, ref_type, ref_id)` 唯一键，
+     * `ON CONFLICT DO NOTHING` → 同一订单至多一张卡片（幂等第一闸）。relatedUserId=卡片发送方 uid。
+     */
+    private suspend fun enqueueCardOutbox(
+        eventType: String, refType: String, refId: Long, channelId: String, scene: Int, senderUid: Long, payload: String,
+    ) {
+        val ts = now()
+        db.execute(
+            "INSERT INTO pay_money_message_notification_outbox " +
+                "(event_type, channel_id, scene, red_packet_id, related_user_id, target_user_id, payload_json, ref_type, ref_id, status, retry_count, next_retry_at, created_at, updated_at) " +
+                "VALUES (:event_type, :channel_id, :scene, :red_packet_id, :sender, 0, :payload, :ref_type, :ref_id, 0, 0, 0, :ts, :ts) " +
+                "ON CONFLICT (event_type, ref_type, ref_id) WHERE ref_id IS NOT NULL DO NOTHING",
+            mapOf(
+                "event_type" to eventType, "channel_id" to channelId, "scene" to scene,
+                "red_packet_id" to refId, "sender" to senderUid, "payload" to payload,
+                "ref_type" to refType, "ref_id" to refId, "ts" to ts,
+            ),
+        )
+    }
+
     /** 发红包：校验 available≥total，一事务内建单 + 扣发送方全额(400) + 审计。返回 redPacketId。 */
     suspend fun send(
         senderUserId: Long,
@@ -135,6 +159,17 @@ class RedPacketLogic(
             PayWalletLogic.BIZ_TYPE_RED_PACKET_CREATE_DEDUCT, order.id, "red_packet_send"
         )
         audit("RED_PACKET_SEND", order.id, senderUserId, "amount=$totalAmount count=$totalCount")
+        // RP-12：同事务写卡片注入 outbox（服务端注入红包卡片，客户端不再自发）。payload 由 platform 从订单组装。
+        val cardPayload = buildJsonObject {
+            put("redPacketId", order.id.toString())
+            put("scene", if (scene == 1) "group" else "dm")
+            put("title", greeting?.takeIf { it.isNotBlank() } ?: "恭喜发财，大吉大利")
+            put("status", "active")
+            put("senderUserId", senderUserId)
+            put("type", type)
+            put("totalCount", totalCount)
+        }.toString()
+        enqueueCardOutbox(EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id, channelId, scene, senderUserId, cardPayload)
         log.info("red_packet.sent", mapOf("id" to order.id, "sender" to senderUserId, "amount" to totalAmount))
         order
     }

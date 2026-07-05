@@ -24,6 +24,9 @@ data class MoneyMessageNotificationOutbox(
     /** RECEIVED: 发送人；其它 0。 */
     val targetUserId: Long = 0,
     val payloadJson: String,
+    /** RP-12：泛化引用（CARD 事件用）。RED_PACKET / MONEY_TRANSFER；refId=订单 id。通知类事件为 null。 */
+    val refType: String? = null,
+    val refId: Long? = null,
     /** 0 PENDING / 1 SENT / 2 FAILED */
     val status: Int = 0,
     val retryCount: Int = 0,
