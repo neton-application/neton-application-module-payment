@@ -170,8 +170,27 @@ class RedPacketLogic(
             put("totalCount", totalCount)
         }.toString()
         enqueueCardOutbox(EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id, channelId, scene, senderUserId, cardPayload)
+        // RP-12 同步注入主路径：卡片注入成功才算红包发送成功（同事务把 outbox 标 SENT，job 只兜底）；
+        // 注入失败抛异常 → 本事务回滚（不扣款不建单），客户端得到「发送失败」。injector 未装配 → 退回 outbox 异步。
+        MoneyMessageInjection.injector?.let { inj ->
+            val messageId = inj.injectCard(
+                EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id, channelId, senderUserId, cardPayload,
+            )
+            markCardOutboxSent(EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id)
+            log.info("red_packet.card_injected", mapOf("id" to order.id, "messageId" to messageId))
+        }
         log.info("red_packet.sent", mapOf("id" to order.id, "sender" to senderUserId, "amount" to totalAmount))
         order
+    }
+
+    /** 同步注入成功后同事务把 outbox 行标 SENT（job 不再重发；行为审计保留）。 */
+    private suspend fun markCardOutboxSent(eventType: String, refType: String, refId: Long) {
+        val ts = now()
+        db.execute(
+            "UPDATE pay_money_message_notification_outbox SET status=1, sent_at=$ts, updated_at=$ts " +
+                "WHERE event_type=:event_type AND ref_type=:ref_type AND ref_id=:ref_id",
+            mapOf("event_type" to eventType, "ref_type" to refType, "ref_id" to refId),
+        )
     }
 
     /** 乐观锁 CAS 未命中（并发抢红包高频正常事件）——内部信号，用于自动重试，不外泄为业务错误。 */
