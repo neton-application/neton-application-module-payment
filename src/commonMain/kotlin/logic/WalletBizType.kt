@@ -23,6 +23,8 @@ object WalletBizType {
     const val TRANSFER_OUT = 500
     const val TRANSFER_IN = 501
     const val TRANSFER_REFUND = 502
+    /** 签到现金奖励入账（600 段：活动/奖励类，spec MEMBER_SIGN_IN_REWARD）。 */
+    const val SIGN_IN_REWARD = 600
 
     /** 收支方向：+1 收入 / -1 支出 / 0 中性（冻结/解冻不改变余额净值）。以 ledger price 符号为准。 */
     fun direction(price: Long): Int = when {
@@ -46,6 +48,7 @@ object WalletBizType {
         TRANSFER_OUT -> "transfer_out"
         TRANSFER_IN -> "transfer_in"
         TRANSFER_REFUND -> "transfer_refund"
+        SIGN_IN_REWARD -> "sign_in_reward"
         else -> "other"
     }
 }
