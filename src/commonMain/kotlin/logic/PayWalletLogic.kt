@@ -63,6 +63,17 @@ class PayWalletLogic(
         updateBalance(wallet.id, diff, BIZ_TYPE_ADMIN_ADJUST, 0L, "Admin adjust")
     }
 
+    /**
+     * admin 手动充值（银行汇款、异常手动到账等线下入账）：正数入账，
+     * 备注写进 ledger title 供审计追溯。无钱包用户懒创建（与充值同语义）。
+     */
+    suspend fun manualRecharge(userId: Long, amount: Long, remark: String) {
+        require(amount > 0) { "manual recharge amount must be positive" }
+        val wallet = getWalletByUserId(userId) ?: db.transaction { getOrCreateWalletInTx(userId) }
+        updateBalance(wallet.id, amount, BIZ_TYPE_ADMIN_ADJUST, 0L, "手动充值：$remark")
+        log.info("wallet.manual-recharge", mapOf("userId" to userId, "amount" to amount, "remark" to remark))
+    }
+
     suspend fun updateBalance(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
         db.transaction {
             applyBalanceUpdate(walletId, price, bizType, bizId, title)
