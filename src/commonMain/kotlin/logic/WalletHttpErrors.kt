@@ -23,6 +23,10 @@ internal fun walletNotFound(message: String): Nothing =
 internal fun walletConflict(message: String): Nothing =
     throw HttpException(NetonErrorCode.OPERATION_CONFLICT, message)
 
+/** 资金授权失败（非会话成员领取他人红包等，#84）→ 403 */
+internal fun walletForbidden(message: String): Nothing =
+    throw HttpException(NetonErrorCode.PERMISSION_DENIED, message)
+
 /** 参数守卫：失败 → 400（替代 require，保持同一判定条件）。 */
 internal inline fun requireParam(value: Boolean, lazyMessage: () -> String) {
     if (!value) walletBadRequest(lazyMessage())

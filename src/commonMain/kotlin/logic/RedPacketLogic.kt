@@ -202,6 +202,14 @@ class RedPacketLogic(
      * 资金安全不变：每次尝试都是一个独立的「快照→守卫更新」原子事务，绝不基于陈旧快照落库。
      */
     suspend fun claim(redPacketId: Long, userId: Long): RedPacketClaim {
+        // #84 资金授权:领取者必须属于红包所在会话(DM 双方 / 群成员)。在事务外做,避免
+        // 授权的跨服务调用长占 DB 事务;channelId/scene/sender 均不可变,无 TOCTOU 风险。
+        // provider 未装配(非 IM 部署)→ 放行。授权失败 → 403(不落 500)。
+        run {
+            val order = RedPacketOrderTable.get(redPacketId)
+                ?: walletNotFound("red packet not found: $redPacketId")
+            MoneyAuthorization.requireCanClaimRedPacket(userId, order.channelId, order.scene, order.senderUserId)
+        }
         var attempt = 0
         while (true) {
             try {
