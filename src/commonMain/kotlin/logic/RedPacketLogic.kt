@@ -387,6 +387,10 @@ class RedPacketLogic(
         return order
     }
 
+    /** #85-A2 交付态（运行时从 outbox 派生，不写订单表）。 */
+    suspend fun deliveryOf(redPacketId: Long): Pair<String, String?> =
+        moneyDeliveryOf(db, REF_RED_PACKET, redPacketId)
+
     suspend fun listClaims(redPacketId: Long): List<RedPacketClaim> =
         RedPacketClaimTable.query {
             where { RedPacketClaim::redPacketId eq redPacketId }

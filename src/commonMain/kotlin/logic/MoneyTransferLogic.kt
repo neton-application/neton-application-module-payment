@@ -121,6 +121,10 @@ class MoneyTransferLogic(
 
     suspend fun detail(transferId: Long): MoneyTransferOrder? = MoneyTransferOrderTable.get(transferId)
 
+    /** #85-A2 交付态（运行时从 outbox 派生，不写订单表）。 */
+    suspend fun deliveryOf(transferId: Long): Pair<String, String?> =
+        moneyDeliveryOf(db, REF_MONEY_TRANSFER, transferId)
+
     suspend fun pageMine(userId: Long, page: Int, size: Int): PageResponse<MoneyTransferOrder> {
         val result = MoneyTransferOrderTable.query {
             where { or(MoneyTransferOrder::fromUserId eq userId, MoneyTransferOrder::toUserId eq userId) }

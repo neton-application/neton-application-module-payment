@@ -62,3 +62,73 @@ data class MoneySendResultVO(
             MoneySendResultVO(orderId, outcome.statusText, outcome.serverMessageIdOrNull?.toString())
     }
 }
+
+/**
+ * #85-A2 交付态派生：运行时从 outbox 读，**不写订单表**（订单只存资金态，交付态在 outbox，避免双写漂移）。
+ * outbox.status=1(SENT) → DELIVERED + messageId；其余(PENDING/RETRY_WAIT/PROCESSING/DEAD)或无行 → PROCESSING。
+ * DEAD 对用户侧同样显 PROCESSING（内部告警 + admin redrive 处理，不向用户泄露内部错误）。
+ */
+suspend fun moneyDeliveryOf(
+    db: neton.database.api.DbContext,
+    refType: String,
+    refId: Long,
+): Pair<String, String?> {
+    val r = db.fetchAll(
+        "SELECT status, server_message_id FROM pay_money_message_notification_outbox " +
+            "WHERE ref_type=:rt AND ref_id=:ri LIMIT 1",
+        mapOf("rt" to refType, "ri" to refId),
+    ).firstOrNull() ?: return "PROCESSING" to null
+    return if (r.int("status") == 1) "DELIVERED" to r.longOrNull("server_message_id")?.toString()
+    else "PROCESSING" to null
+}
+
+/** #85-A2 红包详情响应：订单资金字段 + 交付态（deliveryStatus/messageId 运行时从 outbox 派生）。 */
+@kotlinx.serialization.Serializable
+data class RedPacketDetailVO(
+    val id: Long,
+    val senderUserId: Long,
+    val channelId: String,
+    val scene: Int,
+    val type: Int,
+    val totalAmount: Long,
+    val totalCount: Int,
+    val remainingAmount: Long,
+    val remainingCount: Int,
+    val status: Int,
+    val greeting: String?,
+    val expireAt: Long,
+    val createdAt: Long,
+    val finishedAt: Long,
+    val deliveryStatus: String,
+    val messageId: String? = null,
+) {
+    companion object {
+        fun from(o: model.RedPacketOrder, deliveryStatus: String, messageId: String?) = RedPacketDetailVO(
+            o.id, o.senderUserId, o.channelId, o.scene, o.type, o.totalAmount, o.totalCount,
+            o.remainingAmount, o.remainingCount, o.status, o.greeting, o.expireAt, o.createdAt, o.finishedAt,
+            deliveryStatus, messageId,
+        )
+    }
+}
+
+/** #85-A2 转账详情响应：订单资金字段 + 交付态。 */
+@kotlinx.serialization.Serializable
+data class MoneyTransferDetailVO(
+    val id: Long,
+    val fromUserId: Long,
+    val toUserId: Long,
+    val channelId: String,
+    val amount: Long,
+    val remark: String?,
+    val status: Int,
+    val createdAt: Long,
+    val deliveryStatus: String,
+    val messageId: String? = null,
+) {
+    companion object {
+        fun from(o: model.MoneyTransferOrder, deliveryStatus: String, messageId: String?) = MoneyTransferDetailVO(
+            o.id, o.fromUserId, o.toUserId, o.channelId, o.amount, o.remark, o.status, o.createdAt,
+            deliveryStatus, messageId,
+        )
+    }
+}

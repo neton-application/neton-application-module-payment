@@ -2,6 +2,7 @@ package controller.app.redpacket
 
 import controller.app.redpacket.dto.SendRedPacketRequest
 import logic.MoneySendResultVO
+import logic.RedPacketDetailVO
 import logic.RedPacketLogic
 import model.RedPacketClaim
 import model.RedPacketOrder
@@ -32,7 +33,12 @@ class UserRedPacketController(private val logic: RedPacketLogic) {
         logic.claim(id, identity.id.toLong())
 
     @Get("/detail/{id}")
-    suspend fun detail(@PathVariable id: Long): RedPacketOrder? = logic.detail(id)
+    suspend fun detail(@PathVariable id: Long): RedPacketDetailVO? {
+        // #85-A2: 详情附带 deliveryStatus/messageId（运行时从 outbox 派生，不写订单表）。
+        val order = logic.detail(id) ?: return null
+        val (ds, mid) = logic.deliveryOf(id)
+        return RedPacketDetailVO.from(order, ds, mid)
+    }
 
     @Get("/claims/{id}")
     suspend fun claims(@PathVariable id: Long): List<RedPacketClaim> = logic.listClaims(id)
