@@ -45,25 +45,6 @@ object MoneyMessageInjection {
 }
 
 /**
- * #85-A2 资金发送响应契约（红包 send / 转账 send 统一）。`code=0` 只表示平台已可靠接受并完成资金业务，
- * **不**表示聊天卡片一定已送达 —— 交付语义看 [deliveryStatus]：
- *   - `DELIVERED`：卡片已注入 IM，[messageId] 为 server message id；
- *   - `PROCESSING`：资金已成立，卡片由后台 outbox worker 补发，[messageId] 为 null。
- * 全系统只有这两个交付态（不引入 SUCCESS/FAILED）。
- */
-@kotlinx.serialization.Serializable
-data class MoneySendResultVO(
-    val orderId: Long,
-    val deliveryStatus: String,
-    val messageId: String? = null,
-) {
-    companion object {
-        fun of(orderId: Long, outcome: DeliveryOutcome) =
-            MoneySendResultVO(orderId, outcome.statusText, outcome.serverMessageIdOrNull?.toString())
-    }
-}
-
-/**
  * #85-A2 交付态派生：运行时从 outbox 读，**不写订单表**（订单只存资金态，交付态在 outbox，避免双写漂移）。
  * outbox.status=1(SENT) → DELIVERED + messageId；其余(PENDING/RETRY_WAIT/PROCESSING/DEAD)或无行 → PROCESSING。
  * DEAD 对用户侧同样显 PROCESSING（内部告警 + admin redrive 处理，不向用户泄露内部错误）。
@@ -82,10 +63,15 @@ suspend fun moneyDeliveryOf(
     else "PROCESSING" to null
 }
 
-/** #85-A2 红包详情响应：订单资金字段 + 交付态（deliveryStatus/messageId 运行时从 outbox 派生）。 */
+/**
+ * #85-A2 红包 send/detail 响应（统一形状，**向后兼容**）：保留完整订单资金字段（旧客户端解析
+ * RedPacketOrderView 不受影响，id/totalAmount 等照常）+ 追加 `orderId`(=id) + `deliveryStatus` +
+ * `messageId`（运行时从 outbox 派生）。code=0 = 资金已可靠受理，卡片交付看 deliveryStatus。
+ */
 @kotlinx.serialization.Serializable
 data class RedPacketDetailVO(
     val id: Long,
+    val orderId: Long,
     val senderUserId: Long,
     val channelId: String,
     val scene: Int,
@@ -104,17 +90,18 @@ data class RedPacketDetailVO(
 ) {
     companion object {
         fun from(o: model.RedPacketOrder, deliveryStatus: String, messageId: String?) = RedPacketDetailVO(
-            o.id, o.senderUserId, o.channelId, o.scene, o.type, o.totalAmount, o.totalCount,
+            o.id, o.id, o.senderUserId, o.channelId, o.scene, o.type, o.totalAmount, o.totalCount,
             o.remainingAmount, o.remainingCount, o.status, o.greeting, o.expireAt, o.createdAt, o.finishedAt,
             deliveryStatus, messageId,
         )
     }
 }
 
-/** #85-A2 转账详情响应：订单资金字段 + 交付态。 */
+/** #85-A2 转账 send/detail 响应（统一形状，向后兼容）：完整订单字段 + orderId + deliveryStatus + messageId。 */
 @kotlinx.serialization.Serializable
 data class MoneyTransferDetailVO(
     val id: Long,
+    val orderId: Long,
     val fromUserId: Long,
     val toUserId: Long,
     val channelId: String,
@@ -127,7 +114,7 @@ data class MoneyTransferDetailVO(
 ) {
     companion object {
         fun from(o: model.MoneyTransferOrder, deliveryStatus: String, messageId: String?) = MoneyTransferDetailVO(
-            o.id, o.fromUserId, o.toUserId, o.channelId, o.amount, o.remark, o.status, o.createdAt,
+            o.id, o.id, o.fromUserId, o.toUserId, o.channelId, o.amount, o.remark, o.status, o.createdAt,
             deliveryStatus, messageId,
         )
     }
