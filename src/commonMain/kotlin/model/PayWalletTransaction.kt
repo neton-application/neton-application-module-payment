@@ -17,5 +17,5 @@ data class PayWalletTransaction(
     val price: Long,
     val balance: Long,
     @CreatedAt
-    val createdAt: String? = null
+    val createdAt: Long = 0
 )

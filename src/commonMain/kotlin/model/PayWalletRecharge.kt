@@ -22,7 +22,7 @@ data class PayWalletRecharge(
     val refundStatus: Int = 0,
     val refundTotalPrice: Long = 0,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long = 0,
     @UpdatedAt
-    val updatedAt: String? = null
+    val updatedAt: Long = 0
 )

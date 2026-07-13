@@ -17,7 +17,7 @@ data class PayWallet(
     val totalRecharge: Long = 0,
     val freezePrice: Long = 0,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long = 0,
     @UpdatedAt
-    val updatedAt: String? = null
+    val updatedAt: Long = 0
 )
