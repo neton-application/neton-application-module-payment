@@ -17,6 +17,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.random.Random
 
+/** #85 发红包结果：订单 + 卡片交付结果。controller 据此返回 deliveryStatus/messageId。 */
+data class RedPacketSendResult(val order: RedPacketOrder, val delivery: DeliveryOutcome)
+
 /**
  * 红包（RP-2/RP-3，PrivChat Money Message）。资金真相在订单/领取记录/wallet/ledger/audit；
  * 消息只搬运引用（见 RED_PACKET_AND_TRANSFER_DESIGN_SPEC）。
@@ -119,7 +122,10 @@ class RedPacketLogic(
         )
     }
 
-    /** 发红包：校验 available≥total，一事务内建单 + 扣发送方全额(400) + 审计。返回 redPacketId。 */
+    /**
+     * 发红包：一事务内建单 + 扣发送方全额(400) + 审计 + 写卡片 outbox(PENDING)。
+     * #85：卡片注入移到 commit 之后（事务外快投递），事务内绝无跨服务 HTTP。
+     */
     suspend fun send(
         senderUserId: Long,
         channelId: String,
@@ -128,7 +134,8 @@ class RedPacketLogic(
         totalAmount: Long,
         totalCount: Int,
         greeting: String?,
-    ): RedPacketOrder = db.transaction {
+    ): RedPacketSendResult {
+        val order = db.transaction {
         requireParam(totalAmount > 0) { "totalAmount must be positive: $totalAmount" }
         requireParam(totalCount in 1..1000) { "totalCount out of range: $totalCount" }
         requireParam(totalAmount >= totalCount) { "totalAmount must cover 1 fen per share" }
@@ -170,27 +177,18 @@ class RedPacketLogic(
             put("totalCount", totalCount)
         }.toString()
         enqueueCardOutbox(EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id, channelId, scene, senderUserId, cardPayload)
-        // RP-12 同步注入主路径：卡片注入成功才算红包发送成功（同事务把 outbox 标 SENT，job 只兜底）；
-        // 注入失败抛异常 → 本事务回滚（不扣款不建单），客户端得到「发送失败」。injector 未装配 → 退回 outbox 异步。
-        MoneyMessageInjection.injector?.let { inj ->
-            val messageId = inj.injectCard(
-                EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id, channelId, senderUserId, cardPayload,
-            )
-            markCardOutboxSent(EVENT_RED_PACKET_CARD, REF_RED_PACKET, order.id)
-            log.info("red_packet.card_injected", mapOf("id" to order.id, "messageId" to messageId))
-        }
         log.info("red_packet.sent", mapOf("id" to order.id, "sender" to senderUserId, "amount" to totalAmount))
         order
-    }
-
-    /** 同步注入成功后同事务把 outbox 行标 SENT（job 不再重发；行为审计保留）。 */
-    private suspend fun markCardOutboxSent(eventType: String, refType: String, refId: Long) {
-        val ts = now()
-        db.execute(
-            "UPDATE pay_money_message_notification_outbox SET status=1, sent_at=$ts, updated_at=$ts " +
-                "WHERE event_type=:event_type AND ref_type=:ref_type AND ref_id=:ref_id",
-            mapOf("event_type" to eventType, "ref_type" to refType, "ref_id" to refId),
+        }
+        // #85：commit 之后事务外快投递（统一 delivery service；未装配→PROCESSING 留给后台 worker）。
+        // 交付失败绝不回滚资金 —— 资金已成立，卡片是可重试副作用，由 outbox worker 补发。
+        val delivery = MoneyMessageInjection.delivery?.tryDeliverByRef(REF_RED_PACKET, order.id)
+            ?: DeliveryOutcome.Processing
+        log.info(
+            "red_packet.delivery",
+            mapOf("id" to order.id, "status" to delivery.statusText, "messageId" to delivery.serverMessageIdOrNull),
         )
+        return RedPacketSendResult(order, delivery)
     }
 
     /** 乐观锁 CAS 未命中（并发抢红包高频正常事件）——内部信号，用于自动重试，不外泄为业务错误。 */

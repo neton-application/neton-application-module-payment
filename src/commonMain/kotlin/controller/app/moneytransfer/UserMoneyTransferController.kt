@@ -1,6 +1,7 @@
 package controller.app.moneytransfer
 
 import controller.app.moneytransfer.dto.SendMoneyTransferRequest
+import logic.MoneySendResultVO
 import logic.MoneyTransferLogic
 import model.MoneyTransferOrder
 import neton.core.annotations.Body
@@ -19,8 +20,11 @@ import neton.core.interfaces.Identity
 class UserMoneyTransferController(private val logic: MoneyTransferLogic) {
 
     @Post("/send")
-    suspend fun send(identity: Identity, @Body req: SendMoneyTransferRequest): MoneyTransferOrder =
-        logic.transfer(identity.id.toLong(), req.toUserId, req.channelId, req.amount, req.remark)
+    suspend fun send(identity: Identity, @Body req: SendMoneyTransferRequest): MoneySendResultVO {
+        // #85-A2: 返回 {orderId, deliveryStatus, messageId}。code=0 = 资金已可靠受理；卡片交付看 deliveryStatus。
+        val r = logic.transfer(identity.id.toLong(), req.toUserId, req.channelId, req.amount, req.remark)
+        return MoneySendResultVO.of(r.order.id, r.delivery)
+    }
 
     @Get("/detail/{id}")
     suspend fun detail(@PathVariable id: Long): MoneyTransferOrder? = logic.detail(id)

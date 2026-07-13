@@ -9,7 +9,7 @@ package logic
  *
  * **分层约束**：payment 是 canonical 通用模块,不知道聊天会话/成员(那是 module-privchat 产品层
  * 概念),因此授权判定由产品层在启动时装配实现(基于 IM 会话成员关系)。未装配(`provider == null`,
- * 如非 IM 产品部署或纯支付网关)时按"通用支付无会话概念"放行 —— 与 [MoneyMessageCardInjector]
+ * 如非 IM 产品部署或纯支付网关)时按"通用支付无会话概念"放行 —— 与 [MoneyMessageDelivery]
  * 的装配约定一致。
  *
  * **统一入口**：所有资金能力的授权都经此,不在各 API/logic 内散落 `if`。未来 canReceiveTransfer /

@@ -17,6 +17,9 @@ import kotlinx.serialization.json.put
  * 接收方入账(501) + 订单 + 审计 + 卡片注入 outbox。成功即终态。资金真相在订单/双边 ledger/audit；
  * 消息由服务端注入（RP-12），客户端不再自发。
  */
+/** #85 转账结果：订单 + 卡片交付结果。controller 据此返回 deliveryStatus/messageId。 */
+data class MoneyTransferSendResult(val order: MoneyTransferOrder, val delivery: DeliveryOutcome)
+
 @neton.core.annotations.Logic(logger = "logic.money-transfer")
 class MoneyTransferLogic(
     private val log: Logger,
@@ -40,14 +43,18 @@ class MoneyTransferLogic(
         return "${if (neg) "-" else ""}¥${a / 100}.${if (cents < 10) "0$cents" else "$cents"}"
     }
 
-    /** 转账：校验发送方 available≥amount，一事务内扣发送方 + 入账接收方（懒建收方钱包）+ 审计。 */
+    /**
+     * 转账：一事务内扣发送方 + 入账接收方（懒建收方钱包）+ 审计 + 写卡片 outbox(PENDING)。
+     * #85：卡片注入移到 commit 之后（事务外快投递），事务内绝无跨服务 HTTP。
+     */
     suspend fun transfer(
         fromUserId: Long,
         toUserId: Long,
         channelId: String,
         amount: Long,
         remark: String?,
-    ): MoneyTransferOrder = db.transaction {
+    ): MoneyTransferSendResult {
+        val order = db.transaction {
         requireParam(amount > 0) { "amount must be positive: $amount" }
         requireParam(fromUserId != toUserId) { "cannot transfer to self" }
         val fromWallet = wallet.getWalletByUserId(fromUserId)
@@ -80,27 +87,18 @@ class MoneyTransferLogic(
             put("amountText", amountText(amount))
         }.toString()
         enqueueCardOutbox(order.id, channelId, fromUserId, cardPayload)
-        // RP-12 同步注入主路径：注入成功才算转账成功（同事务把 outbox 标 SENT，job 只兜底）；
-        // 注入失败抛异常 → 本事务回滚（不扣款不建单），客户端得到「发送失败」。injector 未装配 → 退回 outbox 异步。
-        MoneyMessageInjection.injector?.let { inj ->
-            val messageId = inj.injectCard(
-                EVENT_MONEY_TRANSFER_CARD, REF_MONEY_TRANSFER, order.id, channelId, fromUserId, cardPayload,
-            )
-            markCardOutboxSent(EVENT_MONEY_TRANSFER_CARD, REF_MONEY_TRANSFER, order.id)
-            log.info("money_transfer.card_injected", mapOf("id" to order.id, "messageId" to messageId))
-        }
         log.info("money_transfer.done", mapOf("id" to order.id, "from" to fromUserId, "to" to toUserId, "amount" to amount))
         order
-    }
-
-    /** 同步注入成功后同事务把 outbox 行标 SENT（job 不再重发；行为审计保留）。 */
-    private suspend fun markCardOutboxSent(eventType: String, refType: String, refId: Long) {
-        val ts = now()
-        db.execute(
-            "UPDATE pay_money_message_notification_outbox SET status=1, sent_at=$ts, updated_at=$ts " +
-                "WHERE event_type=:event_type AND ref_type=:ref_type AND ref_id=:ref_id",
-            mapOf("event_type" to eventType, "ref_type" to refType, "ref_id" to refId),
+        }
+        // #85：commit 之后事务外快投递（统一 delivery service；未装配→PROCESSING 留给后台 worker）。
+        // 交付失败绝不回滚资金 —— 资金已成立，卡片是可重试副作用，由 outbox worker 补发。
+        val delivery = MoneyMessageInjection.delivery?.tryDeliverByRef(REF_MONEY_TRANSFER, order.id)
+            ?: DeliveryOutcome.Processing
+        log.info(
+            "money_transfer.delivery",
+            mapOf("id" to order.id, "status" to delivery.statusText, "messageId" to delivery.serverMessageIdOrNull),
         )
+        return MoneyTransferSendResult(order, delivery)
     }
 
     /**

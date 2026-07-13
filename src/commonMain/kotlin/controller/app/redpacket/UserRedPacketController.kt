@@ -1,6 +1,7 @@
 package controller.app.redpacket
 
 import controller.app.redpacket.dto.SendRedPacketRequest
+import logic.MoneySendResultVO
 import logic.RedPacketLogic
 import model.RedPacketClaim
 import model.RedPacketOrder
@@ -20,8 +21,11 @@ import neton.core.interfaces.Identity
 class UserRedPacketController(private val logic: RedPacketLogic) {
 
     @Post("/send")
-    suspend fun send(identity: Identity, @Body req: SendRedPacketRequest): RedPacketOrder =
-        logic.send(identity.id.toLong(), req.channelId, req.scene, req.type, req.totalAmount, req.totalCount, req.greeting)
+    suspend fun send(identity: Identity, @Body req: SendRedPacketRequest): MoneySendResultVO {
+        // #85-A2: 返回 {orderId, deliveryStatus, messageId}。code=0 = 资金已可靠受理；卡片交付看 deliveryStatus。
+        val r = logic.send(identity.id.toLong(), req.channelId, req.scene, req.type, req.totalAmount, req.totalCount, req.greeting)
+        return MoneySendResultVO.of(r.order.id, r.delivery)
+    }
 
     @Post("/claim/{id}")
     suspend fun claim(identity: Identity, @PathVariable id: Long): RedPacketClaim =
