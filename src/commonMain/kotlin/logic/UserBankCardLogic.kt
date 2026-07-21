@@ -21,7 +21,7 @@ data class BankCardView(
     val bankCode: String?,
     val cardNoMasked: String,
     val status: Int,
-    val createdAt: String?,
+    val createdAt: Long?,
 )
 
 private fun UserBankCard.toView(): BankCardView = BankCardView(

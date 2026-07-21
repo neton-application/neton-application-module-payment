@@ -36,9 +36,9 @@ data class WalletWithdrawOrder(
     val payoutChannel: String? = null,
     val payoutTradeNo: String? = null,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
     val reviewedAt: Long = 0,
     val paidAt: Long = 0,
     @UpdatedAt
-    val updatedAt: String? = null,
+    val updatedAt: Long? = null,
 )

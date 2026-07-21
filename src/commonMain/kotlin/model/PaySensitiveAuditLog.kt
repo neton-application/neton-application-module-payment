@@ -31,5 +31,5 @@ data class PaySensitiveAuditLog(
     val afterSnapshot: String? = null,
     val reason: String? = null,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
 )

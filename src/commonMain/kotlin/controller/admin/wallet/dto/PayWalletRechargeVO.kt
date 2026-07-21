@@ -15,5 +15,5 @@ data class PayWalletRechargeVO(
     val payChannelCode: String? = null,
     val refundStatus: Int? = null,
     val refundTotalPrice: Long? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )

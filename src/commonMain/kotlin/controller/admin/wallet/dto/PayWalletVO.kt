@@ -10,5 +10,5 @@ data class PayWalletVO(
     val totalExpense: Long? = null,
     val totalRecharge: Long? = null,
     val freezePrice: Long? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )

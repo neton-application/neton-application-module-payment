@@ -15,5 +15,5 @@ data class PayTransferVO(
     val accountNo: String? = null,
     val status: Int? = null,
     val successTime: Long? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )

@@ -26,5 +26,5 @@ data class WalletWithdrawAuditLog(
     val userAgent: String? = null,
     val traceId: String? = null,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
 )

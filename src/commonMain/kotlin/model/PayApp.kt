@@ -15,7 +15,7 @@ data class PayApp(
     val status: Int = 1,
     val remark: String? = null,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
     @UpdatedAt
-    val updatedAt: String? = null
+    val updatedAt: Long? = null
 )

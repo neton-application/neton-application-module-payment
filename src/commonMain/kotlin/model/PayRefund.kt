@@ -22,7 +22,7 @@ data class PayRefund(
     val status: Int = 1,
     val successTime: Long? = null,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
     @UpdatedAt
-    val updatedAt: String? = null
+    val updatedAt: Long? = null
 )

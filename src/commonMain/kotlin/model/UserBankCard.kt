@@ -33,9 +33,9 @@ data class UserBankCard(
     /** 0=NORMAL 1=DISABLED */
     val status: Int = 0,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
     @UpdatedAt
-    val updatedAt: String? = null,
+    val updatedAt: Long? = null,
     /** 软删：0=有效，>0=删除时间戳(ms)。 */
     val deletedAt: Long = 0,
 )

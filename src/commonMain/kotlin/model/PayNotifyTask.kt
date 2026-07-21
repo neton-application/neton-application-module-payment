@@ -21,7 +21,7 @@ data class PayNotifyTask(
     val nextNotifyTime: Long? = null,
     val lastExecuteTime: Long? = null,
     @CreatedAt
-    val createdAt: String? = null,
+    val createdAt: Long? = null,
     @UpdatedAt
-    val updatedAt: String? = null
+    val updatedAt: Long? = null
 )

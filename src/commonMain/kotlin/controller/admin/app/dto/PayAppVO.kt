@@ -12,7 +12,7 @@ data class PayAppVO(
     val name: String? = null,
     val status: Int? = null,
     val remark: String? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )
 
 @Serializable

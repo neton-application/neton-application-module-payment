@@ -17,5 +17,5 @@ data class PayOrderVO(
     val expireTime: Long? = null,
     val successTime: Long? = null,
     val notifyTime: Long? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )

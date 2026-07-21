@@ -9,5 +9,5 @@ data class PayWalletRechargePackageVO(
     val payPrice: Long? = null,
     val bonusPrice: Long? = null,
     val status: Int? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )

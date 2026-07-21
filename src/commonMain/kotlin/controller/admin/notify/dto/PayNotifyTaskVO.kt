@@ -14,5 +14,5 @@ data class PayNotifyTaskVO(
     val maxNotifyTimes: Int? = null,
     val nextNotifyTime: Long? = null,
     val lastExecuteTime: Long? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )

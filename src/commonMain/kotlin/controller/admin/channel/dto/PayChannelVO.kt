@@ -15,7 +15,7 @@ data class PayChannelVO(
     val status: Int? = null,
     val feeRate: Int? = null,
     val remark: String? = null,
-    val createdAt: String? = null
+    val createdAt: Long? = null
 )
 
 @Serializable
