@@ -60,8 +60,20 @@ class UserBankCardLogic(
         requireParam(holderName.isNotBlank()) { "holderName is required" }
         requireParam(bankName.isNotBlank()) { "bankName is required" }
         requireParam(cardNo.isNotBlank()) { "cardNo is required" }
+
+        // 卡号格式在**业务层**判定：此前唯一的校验藏在 BankCardCrypto.encrypt 的裸
+        // require 里，非法卡号抛 IllegalArgumentException → HTTP 500，用户只看到没有
+        // 原因的「绑卡失败」（2026-07-26 生产 7 次）。业务拒绝必须是 400 + 可读原因。
+        //
+        // 归一化也提前到这里：去重查询必须用规范化后的卡号，且非法输入不得触发
+        // hash / encrypt / 查库 / 写库。
+        val normalizedCardNo = BankCardCrypto.normalize(cardNo)
+        requireParam(normalizedCardNo.length in 8..19 && normalizedCardNo.all { it.isDigit() }) {
+            "invalid card number"
+        }
+
         val c = requireCrypto()
-        val hash = c.hashOf(cardNo)
+        val hash = c.hashOf(normalizedCardNo)
 
         // 去重：同一用户同卡（有效）→ 复用，不重复存。
         UserBankCardTable.oneWhere {
@@ -72,7 +84,7 @@ class UserBankCardLogic(
             )
         }?.let { return it.toView() }
 
-        val enc = c.encrypt(cardNo)
+        val enc = c.encrypt(normalizedCardNo)
         val inserted = UserBankCardTable.insert(
             UserBankCard(
                 userId = userId,

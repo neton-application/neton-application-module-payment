@@ -68,7 +68,7 @@ class MoneyMessageDbSmokeTest {
             val ws = PayWalletTable.insert(PayWallet(userId = S, balance = 100_000))
 
             // ======== 1. 发红包 total=30000 count=3 ========
-            val rp1 = redPacket.send(S, "ch1", 1, 0, 30_000, 3, "恭喜发财")
+            val rp1 = redPacket.send(S, "ch1", 1, 0, 30_000, 3, "恭喜发财").order
             assertEquals(70_000L, wallet(S).balance, "发红包扣发送方全额")
             assertEquals(30_000L, rp1.remainingAmount)
             assertNotNull(ledger(400, rp1.id), "ledger 400 红包扣款")
@@ -91,7 +91,7 @@ class MoneyMessageDbSmokeTest {
             assertEquals(0L, sumLedgerForRedPacket(rp1.id), "红包1 托管零和")
 
             // ======== 4. 过期退款：send → 领1 → 强制过期 → 退剩余 ========
-            val rp2 = redPacket.send(S, "ch1", 1, 0, 6_000, 2, null) // S 70000→64000
+            val rp2 = redPacket.send(S, "ch1", 1, 0, 6_000, 2, null).order // S 70000→64000
             assertEquals(64_000L, wallet(S).balance)
             val a2 = redPacket.claim(rp2.id, A); assertEquals(3_000L, a2.amount) // A 10000→13000
             // 强制过期（改 expire_at 到过去），再退款。
@@ -110,7 +110,7 @@ class MoneyMessageDbSmokeTest {
             assertEquals(0L, sumLedgerForRedPacket(rp2.id), "红包2 零和(-6000+3000+3000)")
 
             // ======== 5. 转账即时到账 S→D 20000 ========
-            val t = transfer.transfer(S, D, "ch2", 20_000, "还你的")
+            val t = transfer.transfer(S, D, "ch2", 20_000, "还你的").order
             assertEquals(47_000L, wallet(S).balance, "转出扣发送方")
             assertEquals(20_000L, wallet(D).balance, "转入到账接收方")
             assertEquals(-20_000L, ledger(500, t.id)!!.price, "ledger 500 转出")
@@ -144,7 +144,7 @@ class MoneyMessageDbSmokeTest {
             // ======== 9. 拼手气红包（type=1）：10 元 / 5 人，二倍均值随机分配 ========
             val L = listOf(990010011L, 990010012L, 990010013L, 990010014L, 990010015L)
             val sBeforeLucky = wallet(S).balance
-            val lucky = redPacket.send(S, "ch3", 1, RedPacketLogic.TYPE_LUCKY, 1_000, 5, "拼手气")
+            val lucky = redPacket.send(S, "ch3", 1, RedPacketLogic.TYPE_LUCKY, 1_000, 5, "拼手气").order
             assertEquals(sBeforeLucky - 1_000, wallet(S).balance, "拼手气发红包扣全额")
             assertEquals(RedPacketLogic.TYPE_LUCKY, RedPacketOrderTable.get(lucky.id)!!.type, "type=LUCKY 落库")
             val luckyAmounts = mutableListOf<Long>()
@@ -179,14 +179,14 @@ class MoneyMessageDbSmokeTest {
 
             // ======== 10. 普通红包 10 元 / 5 人（每人恰好 2 元，均分）========
             val M = listOf(990010021L, 990010022L, 990010023L, 990010024L, 990010025L)
-            val normal = redPacket.send(S, "ch4", 1, RedPacketLogic.TYPE_NORMAL, 1_000, 5, null)
+            val normal = redPacket.send(S, "ch4", 1, RedPacketLogic.TYPE_NORMAL, 1_000, 5, null).order
             M.forEach { uid -> assertEquals(200L, redPacket.claim(normal.id, uid).amount, "普通红包 10元/5人 每人 2 元") }
             assertEquals(RedPacketLogic.STATUS_FINISHED, RedPacketOrderTable.get(normal.id)!!.status, "普通红包领完 FINISHED")
             assertEquals(0L, sumLedgerForRedPacket(normal.id), "普通红包零和")
 
             // ======== 11. 拼手气边界：5 分/5 人（每人恰好 1 分）+ 拒绝 4 分/5 人（金额<人数）========
             val N = listOf(990010031L, 990010032L, 990010033L, 990010034L, 990010035L)
-            val tiny = redPacket.send(S, "ch5", 1, RedPacketLogic.TYPE_LUCKY, 5, 5, null)
+            val tiny = redPacket.send(S, "ch5", 1, RedPacketLogic.TYPE_LUCKY, 5, 5, null).order
             N.forEach { uid -> assertEquals(1L, redPacket.claim(tiny.id, uid).amount, "5分/5人拼手气每人恰好 1 分") }
             assertEquals(RedPacketLogic.STATUS_FINISHED, RedPacketOrderTable.get(tiny.id)!!.status)
             assertEquals(0L, sumLedgerForRedPacket(tiny.id), "5分红包零和")
