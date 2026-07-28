@@ -140,6 +140,55 @@ class WalletWithdrawLogic(
         requireOrder(orderId)
     }
 
+    /**
+     * 后台挂起（PENDING/APPROVED/PROCESSING → ON_HOLD）。**不动资金**：钱继续冻着，
+     * 阻塞解除后回到 [WalletWithdrawOrder.holdResumeTo] 继续走完（spec §10）。
+     *
+     * 用户可见文案不入库，只存 [reasonCode] + [reasonParams]，由各端按 locale 渲染。
+     */
+    suspend fun hold(
+        op: OperatorContext,
+        orderId: Long,
+        reasonCode: String,
+        reasonParams: String?,
+        internalNote: String?,
+    ): WalletWithdrawOrder = db.transaction {
+        val order = requireOrder(orderId)
+        SM.ensureCanHold(order.status)
+        val resumeTo = order.status
+        transit(orderId, order.status, SM.ON_HOLD) {
+            set(WalletWithdrawOrder::holdResumeTo, resumeTo)
+            set(WalletWithdrawOrder::holdReasonCode, reasonCode)
+            set(WalletWithdrawOrder::holdReasonParams, reasonParams)
+            set(WalletWithdrawOrder::holdNoteInternal, internalNote)
+            set(WalletWithdrawOrder::holdAt, nowMillis())
+            set(WalletWithdrawOrder::holdBy, op.operatorId)
+        }
+        audit(orderId, op, "hold", resumeTo, SM.ON_HOLD, reasonCode)
+        requireOrder(orderId)
+    }
+
+    /**
+     * 后台解除挂起（ON_HOLD → 挂起前的在途状态）。同样不动资金。
+     * 解除后清空挂起痕迹，避免界面出现「待打款 + 红字卡住原因」这种自相矛盾的状态。
+     */
+    suspend fun unhold(op: OperatorContext, orderId: Long, internalNote: String?): WalletWithdrawOrder = db.transaction {
+        val order = requireOrder(orderId)
+        SM.ensureCanUnhold(order.status)
+        val resumeTo = order.holdResumeTo
+        SM.ensureValidResumeTarget(resumeTo)
+        transit(orderId, order.status, resumeTo) {
+            set(WalletWithdrawOrder::holdResumeTo, 0)
+            set(WalletWithdrawOrder::holdReasonCode, null)
+            set(WalletWithdrawOrder::holdReasonParams, null)
+            set(WalletWithdrawOrder::holdNoteInternal, internalNote)
+            set(WalletWithdrawOrder::holdAt, 0L)
+            set(WalletWithdrawOrder::holdBy, 0L)
+        }
+        audit(orderId, op, "unhold", SM.ON_HOLD, resumeTo, internalNote)
+        requireOrder(orderId)
+    }
+
     // ---------- queries ----------
 
     /** 我的提现订单（倒序）。 */

@@ -1,7 +1,9 @@
 package controller.admin.withdraw
 
 import controller.admin.withdraw.dto.WithdrawApproveRequest
+import controller.admin.withdraw.dto.WithdrawHoldRequest
 import controller.admin.withdraw.dto.WithdrawMarkFailedRequest
+import controller.admin.withdraw.dto.WithdrawUnholdRequest
 import controller.admin.withdraw.dto.WithdrawMarkPaidRequest
 import controller.admin.withdraw.dto.WithdrawRejectRequest
 import logic.OperatorContext
@@ -63,4 +65,19 @@ class AdminWithdrawController(private val logic: WalletWithdrawLogic) {
     @Permission("pay:withdraw:mark-failed")
     suspend fun markFailed(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawMarkFailedRequest): WalletWithdrawOrder =
         logic.markFailed(OperatorContext.from(identity, ctx), id, request.reason)
+
+    /**
+     * 挂起（PENDING/APPROVED/PROCESSING→ON_HOLD）。不动资金，钱继续冻着；
+     * 挂起期间 approve / mark-paid / 用户 cancel 全部被状态机硬拦。
+     */
+    @Post("/hold/{id}")
+    @Permission("pay:withdraw:hold")
+    suspend fun hold(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawHoldRequest): WalletWithdrawOrder =
+        logic.hold(OperatorContext.from(identity, ctx), id, request.reasonCode, request.reasonParams, request.internalNote)
+
+    /** 解除挂起（ON_HOLD→挂起前的在途状态，继续原流程）。 */
+    @Post("/unhold/{id}")
+    @Permission("pay:withdraw:hold")
+    suspend fun unhold(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawUnholdRequest): WalletWithdrawOrder =
+        logic.unhold(OperatorContext.from(identity, ctx), id, request.internalNote)
 }

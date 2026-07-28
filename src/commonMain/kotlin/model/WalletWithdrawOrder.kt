@@ -22,7 +22,7 @@ data class WalletWithdrawOrder(
     val fee: Long = 0,
     val actualAmount: Long,
     val currency: String = "CNY",
-    /** 0=PENDING 1=APPROVED 2=PROCESSING 3=PAID 4=REJECTED 5=FAILED 6=CANCELLED */
+    /** 0=PENDING 1=APPROVED 2=PROCESSING 3=PAID 4=REJECTED 5=FAILED 6=CANCELLED 7=ON_HOLD */
     val status: Int = 0,
     val reviewerId: Long = 0,
     /** 内部审核备注（仅后台）。 */
@@ -31,6 +31,23 @@ data class WalletWithdrawOrder(
     val freezeRemarkUserVisible: String? = null,
     /** 内部失败原因。 */
     val failureReason: String? = null,
+    // ── 挂起（spec WALLET_WITHDRAW_SPEC §10）──
+    /**
+     * 解除挂起后要回到的在途状态；非挂起时为 0。
+     * **不能省**：少了它，已过审(APPROVED)的单子解除后会被打回 PENDING 重审。
+     */
+    val holdResumeTo: Int = 0,
+    /** 挂起原因码（BANK_CUTOFF / CARD_UNUSABLE / NAME_MISMATCH / COMPLIANCE_REVIEW / OTHER）。 */
+    val holdReasonCode: String? = null,
+    /**
+     * 供各端按 locale 渲染的参数（JSON），如 `{"bank":"ICBC","resume_at":178...}`。
+     * 用户可见文案**不入库** —— 客户端有中/繁/英/越四语言，存中文会让非中文用户看到中文。
+     */
+    val holdReasonParams: String? = null,
+    /** 内部备注，绝不下发给用户。 */
+    val holdNoteInternal: String? = null,
+    val holdAt: Long = 0,
+    val holdBy: Long = 0,
     // 代付通道扩展位（第一版人工打款留空）。
     val paymentChannelId: Long = 0,
     val payoutChannel: String? = null,

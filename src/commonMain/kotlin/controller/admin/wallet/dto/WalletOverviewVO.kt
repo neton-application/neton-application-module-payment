@@ -19,6 +19,10 @@ data class WalletOverviewVO(
     val withdrawPendingAmount: Long = 0,
     val withdrawApprovedCount: Long = 0,
     val withdrawApprovedAmount: Long = 0,
+    // 挂起（ON_HOLD）：钱仍冻结但流程受阻，必须单独成桶——否则「在途」金额会少算，
+    // 与 totalFrozen 对不上（spec WALLET_WITHDRAW_SPEC §10.8）。
+    val withdrawOnHoldCount: Long = 0,
+    val withdrawOnHoldAmount: Long = 0,
     val withdrawPaidCount: Long = 0,
     val withdrawPaidAmount: Long = 0,
 )

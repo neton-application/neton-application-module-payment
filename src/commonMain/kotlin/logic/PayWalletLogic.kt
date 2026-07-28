@@ -472,11 +472,13 @@ class PayWalletLogic(
                 "FROM wallet_withdraw_orders GROUP BY status"
         )
         var pc = 0L; var pa = 0L; var ac = 0L; var aa = 0L; var dc = 0L; var da = 0L
+        var hc = 0L; var ha = 0L
         for (r in rows) {
             val c = r.long("c"); val amt = r.long("amt")
             when (r.int("status")) {
                 WithdrawStateMachine.PENDING -> { pc = c; pa = amt }
                 WithdrawStateMachine.APPROVED -> { ac = c; aa = amt }
+                WithdrawStateMachine.ON_HOLD -> { hc = c; ha = amt }
                 WithdrawStateMachine.PAID -> { dc = c; da = amt }
             }
         }
@@ -490,6 +492,7 @@ class PayWalletLogic(
             totalExpense = totalExpense,
             withdrawPendingCount = pc, withdrawPendingAmount = pa,
             withdrawApprovedCount = ac, withdrawApprovedAmount = aa,
+            withdrawOnHoldCount = hc, withdrawOnHoldAmount = ha,
             withdrawPaidCount = dc, withdrawPaidAmount = da,
         )
     }
