@@ -3,7 +3,7 @@ package init
 import neton.core.component.NetonContext
 import neton.core.config.getEnv
 import neton.logging.LoggerFactory
-import neton.security.internal.HmacSha256
+import neton.security.crypto.HmacSha256
 import logic.PayOrderLogic
 import logic.UserBankCardLogic
 import logic.crypto.BankCardCrypto
@@ -41,7 +41,7 @@ object PaymentRuntimeBootstrap {
         } else {
             val keyProvider = EnvWalletCryptoKeyProvider(masterKeyB64)
             // 用主密钥派生独立的 HMAC key（域分隔，避免与加密 key 同值）。
-            val hmacKey = HmacSha256.signForPassword(
+            val hmacKey = HmacSha256.sign(
                 Base64.decode(masterKeyB64),
                 "neton-bank-card-hash-v1".encodeToByteArray(),
             )

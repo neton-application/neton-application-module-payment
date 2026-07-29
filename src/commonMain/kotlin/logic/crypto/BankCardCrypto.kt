@@ -1,6 +1,6 @@
 package logic.crypto
 
-import neton.security.internal.HmacSha256
+import neton.security.crypto.HmacSha256
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
