@@ -10,8 +10,7 @@ import model.WalletWithdrawOrder
  * `holdNoteInternal` 挂起内部备注），直接返回实体会把它们发到用户手机上。
  * 用户侧一律走这个投影，新增内部字段时默认不外泄。
  *
- * 挂起只下发 `holdReasonCode` + `holdReasonParams`，用户可见文案由客户端按 locale 渲染
- * （spec WALLET_WITHDRAW_SPEC §10.5）。
+ * 挂起下发 `holdReasonText`（运营手填，原样展示，不做 i18n；spec WALLET_WITHDRAW_SPEC §10.5）。
  */
 @Serializable
 data class WithdrawOrderUserVO(
@@ -26,8 +25,7 @@ data class WithdrawOrderUserVO(
     val status: Int,
     /** 驳回/失败原因（客户可见）。 */
     val freezeRemarkUserVisible: String? = null,
-    val holdReasonCode: String? = null,
-    val holdReasonParams: String? = null,
+    val holdReasonText: String? = null,
     val createdAt: Long = 0,
     val reviewedAt: Long = 0,
     val paidAt: Long = 0,
@@ -43,8 +41,7 @@ fun WalletWithdrawOrder.toUserVO(): WithdrawOrderUserVO = WithdrawOrderUserVO(
     currency = currency,
     status = status,
     freezeRemarkUserVisible = freezeRemarkUserVisible,
-    holdReasonCode = holdReasonCode,
-    holdReasonParams = holdReasonParams,
+    holdReasonText = holdReasonText,
     createdAt = createdAt ?: 0,
     reviewedAt = reviewedAt,
     paidAt = paidAt,

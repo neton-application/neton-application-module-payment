@@ -73,7 +73,7 @@ class AdminWithdrawController(private val logic: WalletWithdrawLogic) {
     @Post("/hold/{id}")
     @Permission("pay:withdraw:hold")
     suspend fun hold(identity: Identity, ctx: HttpContext, @PathVariable id: Long, @Body request: WithdrawHoldRequest): WalletWithdrawOrder =
-        logic.hold(OperatorContext.from(identity, ctx), id, request.reasonCode, request.reasonParams, request.internalNote)
+        logic.hold(OperatorContext.from(identity, ctx), id, request.reasonText, request.internalNote)
 
     /** 解除挂起（ON_HOLD→挂起前的在途状态，继续原流程）。 */
     @Post("/unhold/{id}")

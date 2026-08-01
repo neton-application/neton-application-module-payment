@@ -37,13 +37,15 @@ data class WalletWithdrawOrder(
      * **不能省**：少了它，已过审(APPROVED)的单子解除后会被打回 PENDING 重审。
      */
     val holdResumeTo: Int = 0,
-    /** 挂起原因码（BANK_CUTOFF / CARD_UNUSABLE / NAME_MISMATCH / COMPLIANCE_REVIEW / OTHER）。 */
-    val holdReasonCode: String? = null,
     /**
-     * 供各端按 locale 渲染的参数（JSON），如 `{"bank":"ICBC","resume_at":178...}`。
-     * 用户可见文案**不入库** —— 客户端有中/繁/英/越四语言，存中文会让非中文用户看到中文。
+     * 挂起原因，运营手填，原样展示给用户。
+     *
+     * 曾经是「原因码 + 参数 JSON」由各端按 locale 渲染。改掉是因为运营只能从五个预置
+     * 码里挑，说不出这一单到底卡在哪；而挂起之后用户本来就在持续找客服，客服手上的
+     * 信息比码表丰富得多。代价是四种语言的用户看到的都是同一段文字——面向大陆用户的
+     * 产品，话说准比能翻译更要紧。
      */
-    val holdReasonParams: String? = null,
+    val holdReasonText: String? = null,
     /** 内部备注，绝不下发给用户。 */
     val holdNoteInternal: String? = null,
     val holdAt: Long = 0,

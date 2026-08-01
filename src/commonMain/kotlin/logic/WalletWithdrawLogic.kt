@@ -144,27 +144,28 @@ class WalletWithdrawLogic(
      * 后台挂起（PENDING/APPROVED/PROCESSING → ON_HOLD）。**不动资金**：钱继续冻着，
      * 阻塞解除后回到 [WalletWithdrawOrder.holdResumeTo] 继续走完（spec §10）。
      *
-     * 用户可见文案不入库，只存 [reasonCode] + [reasonParams]，由各端按 locale 渲染。
+     * [reasonText] 是运营手填的用户可见文案，原样入库、原样下发。
      */
     suspend fun hold(
         op: OperatorContext,
         orderId: Long,
-        reasonCode: String,
-        reasonParams: String?,
+        reasonText: String,
         internalNote: String?,
     ): WalletWithdrawOrder = db.transaction {
         val order = requireOrder(orderId)
         SM.ensureCanHold(order.status)
+        // 空文案等于挂起后用户只看到「已挂起」三个字，不知道该干什么。
+        val text = reasonText.trim()
+        require(text.isNotEmpty()) { "挂起原因不能为空" }
         val resumeTo = order.status
         transit(orderId, order.status, SM.ON_HOLD) {
             set(WalletWithdrawOrder::holdResumeTo, resumeTo)
-            set(WalletWithdrawOrder::holdReasonCode, reasonCode)
-            set(WalletWithdrawOrder::holdReasonParams, reasonParams)
+            set(WalletWithdrawOrder::holdReasonText, text)
             set(WalletWithdrawOrder::holdNoteInternal, internalNote)
             set(WalletWithdrawOrder::holdAt, nowMillis())
             set(WalletWithdrawOrder::holdBy, op.operatorId)
         }
-        audit(orderId, op, "hold", resumeTo, SM.ON_HOLD, reasonCode)
+        audit(orderId, op, "hold", resumeTo, SM.ON_HOLD, text)
         requireOrder(orderId)
     }
 
@@ -179,8 +180,7 @@ class WalletWithdrawLogic(
         SM.ensureValidResumeTarget(resumeTo)
         transit(orderId, order.status, resumeTo) {
             set(WalletWithdrawOrder::holdResumeTo, 0)
-            set(WalletWithdrawOrder::holdReasonCode, null)
-            set(WalletWithdrawOrder::holdReasonParams, null)
+            set(WalletWithdrawOrder::holdReasonText, null)
             set(WalletWithdrawOrder::holdNoteInternal, internalNote)
             set(WalletWithdrawOrder::holdAt, 0L)
             set(WalletWithdrawOrder::holdBy, 0L)
