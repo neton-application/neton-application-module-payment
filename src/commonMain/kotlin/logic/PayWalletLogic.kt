@@ -87,6 +87,13 @@ class PayWalletLogic(
     }
 
     private suspend fun applyBalanceUpdate(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
+        // 先按冻结记录刷新缓存，再拿它做判断。
+        //
+        // 下面的借记闸门读的是 `freezePrice` 这个缓存，而缓存会因为**时间**而变旧：
+        // 司法冻结一过 expires_at 就不再生效，但缓存要等到有人动这个钱包才会重算。
+        // 不先刷新的话，冻结到期了用户的钱照样花不出去，一直等到巡检跑过——
+        // 而巡检是记账用的，不该成为「钱什么时候能花」的判据。
+        freezes.recomputeFreezePriceInTx(walletId)
         val wallet = PayWalletTable.get(walletId)
             ?: walletNotFound("Wallet not found: $walletId")
 

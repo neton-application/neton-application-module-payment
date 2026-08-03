@@ -18,6 +18,7 @@ import table.PayWalletTable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 private object FreezeSmokeLogger : Logger {
     override fun trace(msg: String, fields: Fields) {}
@@ -106,6 +107,29 @@ class WalletFreezeDbSmokeTest {
 
             freezes.release(op, hold.id)
             assertEquals(0L, PayWalletTable.get(wallet.id)!!.freezePrice)
+
+            // ---- 5. 到期：钱当场可用，不等定时任务 ----
+            val expiring = freezes.placeJudicialFreeze(
+                op, TEST_UID, targetAmount = null, legalDocNo = "SMOKE-DOC-EXPIRE",
+                reasonText = null, expiresAt = 1L, // 1970 年，已过期
+            )
+            // 下达那一刻就已经过期，所以它压根不该占住任何钱。
+            assertEquals(0L, PayWalletTable.get(wallet.id)!!.freezePrice, "过期冻结不占用余额")
+            assertEquals(false, freezes.isJudiciallyFrozen(wallet.id), "过期冻结不算司法冻结中")
+
+            // 到期后缓存可能还是旧的（缓存只在有人动这个钱包时才重算），而借记闸门读的
+            // 正是缓存。这里手动造出「记录已过期、缓存还高着」这个真实形状：钱必须能花出去，
+            // 不能等巡检。
+            PayWalletTable.update(PayWalletTable.get(wallet.id)!!.copy(freezePrice = 12_000))
+            payWallet.updateBalance(wallet.id, -1_000, PayWalletLogic.BIZ_TYPE_ADMIN_ADJUST, 0, "smoke 到期后消费")
+            assertEquals(11_000L, PayWalletTable.get(wallet.id)!!.balance)
+            assertEquals(0L, PayWalletTable.get(wallet.id)!!.freezePrice, "陈旧缓存在借记前被刷新")
+
+            // 巡检只是把状态追上事实。
+            assertEquals(WalletFreezeStatus.ACTIVE, PayWalletFreezeTable.get(expiring.id)!!.status)
+            assertTrue(freezes.sweepExpired() >= 1, "巡检翻正到期冻结")
+            assertEquals(WalletFreezeStatus.EXPIRED, PayWalletFreezeTable.get(expiring.id)!!.status)
+            assertEquals(0L, PayWalletTable.get(wallet.id)!!.freezePrice, "巡检不改变可用余额")
 
             println("[WALLET_DB_SMOKE] PASS: risk-hold/idempotency/judicial/credit-absorption/release all verified")
         }

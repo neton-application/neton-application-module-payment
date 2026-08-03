@@ -24,8 +24,27 @@ class WalletFreezeLogic(
     private val db: DbContext,
 ) {
 
-    /** 某钱包当前全部 ACTIVE 冻结。算 available 的热路径。 */
-    suspend fun activeFreezes(walletId: Long): List<PayWalletFreeze> =
+    /**
+     * 某钱包当前**仍然生效**的冻结。算 available 的热路径。
+     *
+     * 过了 `expires_at` 的行不算数，哪怕它的 status 还是 ACTIVE：
+     * **到期必须立刻生效，不能等定时任务来改状态**。本项目现在根本没有跑着的
+     * 定时任务，把「钱什么时候解冻」挂在一个不存在的 cron 上，等于用户的钱到期了
+     * 还冻着。status 的翻正由 [sweepExpired] 补，那只是记账，不是判据。
+     */
+    suspend fun activeFreezes(walletId: Long): List<PayWalletFreeze> {
+        val now = nowMillis()
+        return activeFreezesRaw(walletId).filter { it.expiresAt <= 0 || it.expiresAt > now }
+    }
+
+    /**
+     * 状态仍是 ACTIVE 的行，**不看到期**。
+     *
+     * 只给两种人用：[sweepExpired]（要找出到期待翻正的行）和 [finishInTx]
+     * （结束一条冻结时要把它自己算进快照里——它马上就不生效了，但快照记的是
+     * 「结束前冻住了多少」）。判可用余额一律走 [activeFreezes]。
+     */
+    private suspend fun activeFreezesRaw(walletId: Long): List<PayWalletFreeze> =
         PayWalletFreezeTable.query {
             where {
                 and(
@@ -65,15 +84,9 @@ class WalletFreezeLogic(
         return WalletFreezeModel.available(wallet.balance, s.amountHolds, s.judicial)
     }
 
-    /** 这个钱包是否处于司法冻结。打款闸门用它（§4.3）。 */
+    /** 这个钱包是否处于司法冻结。打款闸门用它（§4.3）。到期的不算。 */
     suspend fun isJudiciallyFrozen(walletId: Long): Boolean =
-        PayWalletFreezeTable.existsWhere {
-            and(
-                PayWalletFreeze::walletId eq walletId,
-                PayWalletFreeze::freezeType eq WalletFreezeType.JUDICIAL,
-                PayWalletFreeze::status eq WalletFreezeStatus.ACTIVE,
-            )
-        }
+        activeFreezes(walletId).any { it.freezeType == WalletFreezeType.JUDICIAL }
 
     /**
      * 按冻结记录重算 `freeze_price` 缓存并落库。
@@ -141,7 +154,8 @@ class WalletFreezeLogic(
         // amount 只在 ACTIVE 行上表示「上限」，终态行没人再拿它当上限读，写它是安全的。
         val snapshotAmount = if (freeze.freezeType == WalletFreezeType.JUDICIAL && freeze.amount == null) {
             val wallet = PayWalletTable.get(freeze.walletId)
-            val s = summarize(activeFreezes(freeze.walletId))
+            // 用 raw：到期结束时这条已经不生效了，但快照要记的正是「结束前冻住了多少」。
+            val s = summarize(activeFreezesRaw(freeze.walletId))
             if (wallet == null) 0L else WalletFreezeModel.judicialHold(wallet.balance, s.amountHolds, s.judicial)
         } else {
             freeze.amount
@@ -292,6 +306,34 @@ class WalletFreezeLogic(
         }
         log.info("wallet.freeze.release", mapOf("freezeId" to freezeId, "operatorId" to op.operatorId))
         finishInTx(freezeId, WalletFreezeStatus.RELEASED)
+    }
+
+    /**
+     * 把已过 `expires_at` 的冻结翻成 `EXPIRED`。返回处理条数。
+     *
+     * **这是记账，不是判据。** 到期那一刻钱就已经可用了（见 [activeFreezes]），
+     * 这里只是让状态、`freeze_price` 缓存和后台列表追上事实。所以它晚跑、漏跑、
+     * 跑两遍都不会让用户的钱多冻一分钟——[finishInTx] 本身幂等。
+     */
+    suspend fun sweepExpired(limit: Int = 200): Int {
+        val now = nowMillis()
+        val due = PayWalletFreezeTable.query {
+            where {
+                and(
+                    PayWalletFreeze::status eq WalletFreezeStatus.ACTIVE,
+                    PayWalletFreeze::expiresAt gt 0L,
+                    PayWalletFreeze::expiresAt lt now,
+                )
+            }
+            orderBy(PayWalletFreeze::id.asc())
+        }.page(1, limit.coerceIn(1, 1000)).items
+        var n = 0
+        for (f in due) {
+            val done = db.transaction { finishInTx(f.id, WalletFreezeStatus.EXPIRED) }
+            if (done) n++
+        }
+        if (n > 0) log.info("wallet.freeze.sweep_expired", mapOf("count" to n))
+        return n
     }
 
     /** 后台冻结分页（可按用户/类型/状态筛选）。 */

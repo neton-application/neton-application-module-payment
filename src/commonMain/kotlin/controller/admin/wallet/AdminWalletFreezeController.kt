@@ -77,6 +77,17 @@ class AdminWalletFreezeController(private val logic: WalletFreezeLogic) {
         expiresAt = request.expiresAt,
     )
 
+    /**
+     * 把到期的冻结翻成 EXPIRED。
+     *
+     * 到期本身**不需要**这个接口：过了期限的冻结在可用余额计算里当场失效
+     * （见 `WalletFreezeLogic.activeFreezes`）。这里只是把状态和缓存追上事实，
+     * 供运维手动触发或将来挂定时任务。所以权限点复用「解除冻结」。
+     */
+    @Post("/sweep-expired")
+    @Permission("pay:wallet-freeze:release")
+    suspend fun sweepExpired(@Query limit: Int = 200): Int = logic.sweepExpired(limit)
+
     /** 解除冻结（放行，钱回到可用余额）。 */
     @Post("/release/{id}")
     @Permission("pay:wallet-freeze:release")
