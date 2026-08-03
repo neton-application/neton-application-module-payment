@@ -2,6 +2,7 @@ package logic
 
 import dto.PageResponse
 import model.PayWallet
+import model.PayWalletFreeze
 import model.PayWalletTransaction
 import model.PayWalletRecharge
 import table.PayWalletTable
@@ -17,6 +18,11 @@ class PayWalletLogic(
     private val log: Logger,
     private val db: DbContext = dbContext()
 ) {
+    /**
+     * 冻结记录（真源）。提现的 freeze/unfreeze/deduct 通过它维护记录并重算
+     * `freeze_price` 缓存——缓存只能有一个写入者，见 [freezeInTx] 内注释。
+     */
+    private val freezes = WalletFreezeLogic(log, db)
 
     companion object {
         const val BIZ_TYPE_RECHARGE = 1
@@ -141,7 +147,22 @@ class PayWalletLogic(
         val wallet = PayWalletTable.get(walletId)
             ?: walletNotFound("Wallet not found: $walletId")
         PayWalletFreezeRules.ensureCanFreeze(wallet.balance, wallet.freezePrice, amount)
-        PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice + amount))
+        // 落一条冻结记录再重算缓存，而不是直接 `freezePrice += amount`。
+        //
+        // 两者对「只有提现在冻结」的钱包结果完全一样，但缓存只能有**一个写入者**：
+        // 账户冻结那条路径是按记录重算的，这边再自己加减，两个写法会互相覆盖，
+        // 表现为冻结额忽大忽小。
+        freezes.placeInTx(
+            PayWalletFreeze(
+                walletId = walletId,
+                userId = wallet.userId,
+                freezeType = WalletFreezeType.WITHDRAW,
+                amount = amount,
+                refType = WalletFreezeRefType.WITHDRAW_ORDER,
+                refId = bizId.toString(),
+                reasonCode = "withdraw",
+            ),
+        )
         insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_FREEZE, bizId, title, price = 0, balance = wallet.balance)
         log.info("wallet.freeze", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
     }
@@ -155,7 +176,11 @@ class PayWalletLogic(
         val wallet = PayWalletTable.get(walletId)
             ?: walletNotFound("Wallet not found: $walletId")
         PayWalletFreezeRules.ensureCanUnfreeze(wallet.freezePrice, amount)
-        PayWalletTable.update(wallet.copy(freezePrice = wallet.freezePrice - amount))
+        // RELEASED = 放行，钱回到可用余额（与打款实扣的 CONSUMED 区分开）。
+        freezes.finishByRefInTx(
+            WalletFreezeType.WITHDRAW, WalletFreezeRefType.WITHDRAW_ORDER, bizId.toString(),
+            WalletFreezeStatus.RELEASED,
+        )
         insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_UNFREEZE, bizId, title, price = 0, balance = wallet.balance)
         log.info("wallet.unfreeze", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
     }
@@ -173,9 +198,14 @@ class PayWalletLogic(
         PayWalletTable.update(
             wallet.copy(
                 balance = newBalance,
-                freezePrice = wallet.freezePrice - amount,
                 totalExpense = wallet.totalExpense + amount
             )
+        )
+        // CONSUMED 而不是 RELEASED：钱是被扣走了，不是解冻回可用余额。
+        // 合并成一个「已结束」会让用户以为钱回来了。
+        freezes.finishByRefInTx(
+            WalletFreezeType.WITHDRAW, WalletFreezeRefType.WITHDRAW_ORDER, bizId.toString(),
+            WalletFreezeStatus.CONSUMED,
         )
         insertWithdrawLedger(walletId, BIZ_TYPE_WITHDRAW_DEDUCT, bizId, title, price = -amount, balance = newBalance)
         log.info("wallet.deductFrozen", mapOf("walletId" to walletId, "amount" to amount, "bizId" to bizId))
