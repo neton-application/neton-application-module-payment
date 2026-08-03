@@ -10,6 +10,7 @@ import logic.crypto.BankCardCrypto
 import logic.crypto.EnvWalletCryptoKeyProvider
 import model.PayWallet
 import model.PaySensitiveAuditLog
+import model.PayWalletFreeze
 import model.PayWalletTransaction
 import model.UserBankCard
 import model.WalletWithdrawAuditLog
@@ -23,6 +24,7 @@ import neton.database.dsl.*
 import neton.logging.Fields
 import neton.logging.Logger
 import table.PaySensitiveAuditLogTable
+import table.PayWalletFreezeTable
 import table.PayWalletTable
 import table.PayWalletTransactionTable
 import table.UserBankCardTable
@@ -66,13 +68,7 @@ class WalletWithdrawDbSmokeTest {
         val keyB64 = getEnv(EnvWalletCryptoKeyProvider.ENV_KEY_NAME)
             ?: Base64.encode(ByteArray(32) { (it + 3).toByte() })
 
-        SqlxDatabase.initialize(
-            DatabaseConfig(
-                driver = DatabaseDriver.POSTGRESQL,
-                uri = getEnv("WALLET_DB_URI")
-                    ?: "postgresql://zoujiaqing:privchat@localhost:5432/privchat-application",
-            )
-        )
+        SmokeDatabase.ensure()
 
         val crypto = BankCardCrypto(EnvWalletCryptoKeyProvider(keyB64), ByteArray(32) { (it + 9).toByte() })
         val payWallet = PayWalletLogic(NoopLogger)
@@ -81,8 +77,15 @@ class WalletWithdrawDbSmokeTest {
 
         runBlocking {
             // ---- seed: 钱包 balance=100000, freeze=0 ----
-            val wallet = PayWalletTable.insert(PayWallet(userId = TEST_UID, balance = 100_000))
+            // 清掉上一轮的残留。不清的话第二次跑直接撞 `idx_pay_wallets_user` 唯一约束，
+            // 报的是「duplicate key」而不是被测逻辑的问题，很容易被误读成回归。
+            SmokeDatabase.purgeTestUser(TEST_UID)
+
+            // 期初余额走入账路径：直接塞 balance 会让 wallet-consistency-check.sh 的
+            // 「global conservation」永久欠一笔（有余额没账变）。
+            val wallet = PayWalletTable.insert(PayWallet(userId = TEST_UID))
             assertEquals(0L, wallet.freezePrice)
+            payWallet.manualRecharge(TEST_UID, 100_000, "smoke 期初余额")
 
             // ========== 1. 银行卡链路 ==========
             val view = cards.bindBankCard(TEST_UID, "张三", "招商银行", "CMB", "6225 7600 1234 5678")

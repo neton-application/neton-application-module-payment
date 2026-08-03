@@ -53,13 +53,7 @@ class MoneyMessageDbSmokeTest {
     @Test
     fun moneyMessageSmoke() {
         if (getEnv("RP_DB_SMOKE") != "1") return
-        SqlxDatabase.initialize(
-            DatabaseConfig(
-                driver = DatabaseDriver.POSTGRESQL,
-                uri = getEnv("WALLET_DB_URI")
-                    ?: "postgresql://zoujiaqing:privchat@localhost:5432/privchat-application",
-            )
-        )
+        SmokeDatabase.ensure()
         val redPacket = RedPacketLogic(RpNoopLogger)
         val transfer = MoneyTransferLogic(RpNoopLogger)
 
