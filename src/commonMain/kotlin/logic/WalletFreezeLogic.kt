@@ -190,6 +190,118 @@ class WalletFreezeLogic(
     /** 冻结记录 + 展示用金额。展示金额与记录里的 amount 不是一回事，见 [pageMyFreezes]。 */
     data class VisibleFreeze(val freeze: PayWalletFreeze, val shownAmount: Long)
 
+
+    // ==================== 后台冻结操作（spec §4.2 / §4.5）====================
+
+    /**
+     * 下一笔**单笔风控冻结**（「这笔钱可能有问题」）。
+     *
+     * 可用余额不足时**显式失败**，不按可用余额部分冻结——运营会以为冻住了。
+     * 失败之后由运营决定是否改用账户冻结（那个本来就是「有多少冻多少」）。
+     */
+    suspend fun placeRiskHold(
+        op: OperatorContext,
+        userId: Long,
+        amount: Long,
+        refId: String,
+        reasonText: String?,
+    ): PayWalletFreeze = db.transaction {
+        val wallet = PayWalletTable.oneWhere { PayWallet::userId eq userId }
+            ?: walletNotFound("Wallet not found for user: $userId")
+        val summary = summarize(activeFreezes(wallet.id))
+        requireState(
+            WalletFreezeModel.canPlaceAmountHold(wallet.balance, summary.amountHolds, summary.judicial, amount)
+        ) {
+            val available = WalletFreezeModel.available(wallet.balance, summary.amountHolds, summary.judicial)
+            "insufficient available balance to hold: available=$available, need=$amount"
+        }
+        placeInTx(
+            PayWalletFreeze(
+                walletId = wallet.id,
+                userId = userId,
+                freezeType = WalletFreezeType.RISK_HOLD,
+                amount = amount,
+                refType = WalletFreezeRefType.WALLET_TRANSACTION,
+                refId = refId,
+                reasonCode = "risk_review",
+                reasonText = reasonText,
+                operatorId = op.operatorId,
+            ),
+        )
+    }
+
+    /**
+     * 下**账户冻结**（司法）。[targetAmount] 为 null = 全额，否则是定额目标。
+     *
+     * 这里**不校验余额**：账户冻结的语义就是「有多少冻多少，后续到账继续吸收」，
+     * 余额为 0 时下达也是有效的——钱一到就被冻住。
+     *
+     * 一个钱包最多一条 ACTIVE（DB 部分唯一索引兜底）；重复下达按幂等键返回原记录。
+     */
+    suspend fun placeJudicialFreeze(
+        op: OperatorContext,
+        userId: Long,
+        targetAmount: Long?,
+        legalDocNo: String,
+        reasonText: String?,
+        expiresAt: Long,
+    ): PayWalletFreeze = db.transaction {
+        requireParam(legalDocNo.isNotBlank()) { "legal document number is required" }
+        requireParam(targetAmount == null || targetAmount > 0) {
+            "judicial target amount must be positive when present: $targetAmount"
+        }
+        val wallet = PayWalletTable.oneWhere { PayWallet::userId eq userId }
+            ?: walletNotFound("Wallet not found for user: $userId")
+        requireState(!isJudiciallyFrozen(wallet.id)) {
+            "wallet already has an active account freeze"
+        }
+        placeInTx(
+            PayWalletFreeze(
+                walletId = wallet.id,
+                userId = userId,
+                freezeType = WalletFreezeType.JUDICIAL,
+                amount = targetAmount,
+                refType = WalletFreezeRefType.LEGAL_DOCUMENT,
+                refId = legalDocNo,
+                reasonCode = "judicial",
+                reasonText = reasonText,
+                operatorId = op.operatorId,
+                expiresAt = expiresAt,
+            ),
+        )
+    }
+
+    /** 解除一条冻结（放行，钱回到可用余额）。提现冻结不走这里——那由提现状态机管。 */
+    suspend fun release(op: OperatorContext, freezeId: Long): Boolean = db.transaction {
+        val freeze = PayWalletFreezeTable.get(freezeId) ?: return@transaction false
+        requireState(freeze.freezeType != WalletFreezeType.WITHDRAW) {
+            "a withdrawal hold is released by the withdrawal state machine, not here"
+        }
+        log.info("wallet.freeze.release", mapOf("freezeId" to freezeId, "operatorId" to op.operatorId))
+        finishInTx(freezeId, WalletFreezeStatus.RELEASED)
+    }
+
+    /** 后台冻结分页（可按用户/类型/状态筛选）。 */
+    suspend fun pageFreezes(
+        page: Int,
+        size: Int,
+        userId: Long? = null,
+        freezeType: Int? = null,
+        status: Int? = null,
+    ): Pair<List<PayWalletFreeze>, Long> {
+        val result = PayWalletFreezeTable.query {
+            where {
+                and(
+                    whenPresent(userId) { PayWalletFreeze::userId eq it },
+                    whenPresent(freezeType) { PayWalletFreeze::freezeType eq it },
+                    whenPresent(status) { PayWalletFreeze::status eq it },
+                )
+            }
+            orderBy(PayWalletFreeze::id.desc())
+        }.page(page, size)
+        return result.items to result.total
+    }
+
     /** 按幂等键结束（调用方通常只有业务单号，没有 freeze id）。 */
     suspend fun finishByRefInTx(freezeType: Int, refType: Int, refId: String, terminalStatus: Int): Boolean {
         val freeze = PayWalletFreezeTable.oneWhere {
