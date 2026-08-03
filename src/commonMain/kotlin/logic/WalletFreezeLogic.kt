@@ -143,6 +143,53 @@ class WalletFreezeLogic(
         return true
     }
 
+
+    /**
+     * 我的冻结列表（用户端）。倒序：进行中的在最上面。
+     *
+     * 全额司法冻结在记录里 `amount` 是 `null`（无上限），但用户要看到一个数，
+     * 所以这里把它换算成**按当前余额算出来的实际冻结额**再下发。
+     */
+    suspend fun pageMyFreezes(walletId: Long, page: Int, size: Int): Pair<List<VisibleFreeze>, Long> {
+        val q = PayWalletFreezeTable.query {
+            where { PayWalletFreeze::walletId eq walletId }
+            orderBy(PayWalletFreeze::id.desc())
+        }
+        val result = q.page(page, size)
+        val wallet = PayWalletTable.get(walletId)
+        val summary = summarize(activeFreezes(walletId))
+        val judicialActual = if (wallet == null) 0L else WalletFreezeModel.judicialHold(
+            wallet.balance, summary.amountHolds, summary.judicial,
+        )
+        val visible = result.items.map { f ->
+            val shown = when {
+                f.freezeType != WalletFreezeType.JUDICIAL -> f.amount ?: 0L
+                // 已结束的司法冻结不再占用余额，展示 0 比展示一个算不出来的数诚实。
+                f.status != WalletFreezeStatus.ACTIVE -> 0L
+                else -> judicialActual
+            }
+            VisibleFreeze(freeze = f, shownAmount = shown)
+        }
+        return visible to result.total
+    }
+
+    /** 我的单条冻结（必须本人钱包）。 */
+    suspend fun myFreezeDetail(walletId: Long, freezeId: Long): VisibleFreeze? {
+        val f = PayWalletFreezeTable.get(freezeId)?.takeIf { it.walletId == walletId } ?: return null
+        val wallet = PayWalletTable.get(walletId)
+        val summary = summarize(activeFreezes(walletId))
+        val shown = when {
+            f.freezeType != WalletFreezeType.JUDICIAL -> f.amount ?: 0L
+            f.status != WalletFreezeStatus.ACTIVE -> 0L
+            wallet == null -> 0L
+            else -> WalletFreezeModel.judicialHold(wallet.balance, summary.amountHolds, summary.judicial)
+        }
+        return VisibleFreeze(freeze = f, shownAmount = shown)
+    }
+
+    /** 冻结记录 + 展示用金额。展示金额与记录里的 amount 不是一回事，见 [pageMyFreezes]。 */
+    data class VisibleFreeze(val freeze: PayWalletFreeze, val shownAmount: Long)
+
     /** 按幂等键结束（调用方通常只有业务单号，没有 freeze id）。 */
     suspend fun finishByRefInTx(freezeType: Int, refType: Int, refId: String, terminalStatus: Int): Boolean {
         val freeze = PayWalletFreezeTable.oneWhere {
