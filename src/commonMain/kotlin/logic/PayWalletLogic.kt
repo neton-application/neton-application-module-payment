@@ -117,6 +117,12 @@ class PayWalletLogic(
         }
         PayWalletTable.update(updatedWallet)
 
+        // 余额一变就重算冻结缓存。**司法冻结的冻结额跟着余额走**（「到账即冻」），
+        // 所以入账后不重算的话，缓存偏小 = 新到的钱立刻变成可用余额，冻结形同虚设——
+        // 本机实测过：全额司法冻结下手动充值 2000，balance 7584 而 freeze_price 还是 5584。
+        // 金额型冻结不随余额变，但余额跌破时封顶值也要跟着降，所以借贷两个方向都重算。
+        freezes.recomputeFreezePriceInTx(walletId)
+
         // Create transaction record
         val transaction = PayWalletTransaction(
             walletId = walletId,

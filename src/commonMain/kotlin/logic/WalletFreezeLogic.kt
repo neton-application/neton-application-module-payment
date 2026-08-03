@@ -135,8 +135,19 @@ class WalletFreezeLogic(
         val freeze = PayWalletFreezeTable.get(freezeId) ?: return false
         if (freeze.status != WalletFreezeStatus.ACTIVE) return false
         val now = nowMillis()
+        // 全额司法冻结（amount = null，无上限）结束时把**当时实际冻住的钱**快照进 amount。
+        // 不快照的话这条记录就永远算不出金额了——余额早就变了——用户在冻结历史里
+        // 只能看到「账户冻结 ¥0.00 已解除」，看起来像什么都没发生过。
+        // amount 只在 ACTIVE 行上表示「上限」，终态行没人再拿它当上限读，写它是安全的。
+        val snapshotAmount = if (freeze.freezeType == WalletFreezeType.JUDICIAL && freeze.amount == null) {
+            val wallet = PayWalletTable.get(freeze.walletId)
+            val s = summarize(activeFreezes(freeze.walletId))
+            if (wallet == null) 0L else WalletFreezeModel.judicialHold(wallet.balance, s.amountHolds, s.judicial)
+        } else {
+            freeze.amount
+        }
         PayWalletFreezeTable.update(
-            freeze.copy(status = terminalStatus, releasedAt = now, updatedAt = now),
+            freeze.copy(amount = snapshotAmount, status = terminalStatus, releasedAt = now, updatedAt = now),
         )
         recomputeFreezePriceInTx(freeze.walletId)
         log.info("wallet.freeze.finished", mapOf("freezeId" to freezeId, "status" to terminalStatus))
@@ -147,8 +158,9 @@ class WalletFreezeLogic(
     /**
      * 我的冻结列表（用户端）。倒序：进行中的在最上面。
      *
-     * 全额司法冻结在记录里 `amount` 是 `null`（无上限），但用户要看到一个数，
-     * 所以这里把它换算成**按当前余额算出来的实际冻结额**再下发。
+     * 全额司法冻结在记录里 `amount` 是 `null`（无上限），但用户要看到一个数：
+     * 进行中的按当前余额换算成实际冻结额；已结束的直接用 [finishInTx] 结束时
+     * 快照进 `amount` 的那个数（余额早变了，事后再算只会算出 0）。
      */
     suspend fun pageMyFreezes(walletId: Long, page: Int, size: Int): Pair<List<VisibleFreeze>, Long> {
         val q = PayWalletFreezeTable.query {
@@ -164,8 +176,8 @@ class WalletFreezeLogic(
         val visible = result.items.map { f ->
             val shown = when {
                 f.freezeType != WalletFreezeType.JUDICIAL -> f.amount ?: 0L
-                // 已结束的司法冻结不再占用余额，展示 0 比展示一个算不出来的数诚实。
-                f.status != WalletFreezeStatus.ACTIVE -> 0L
+                // 终态行的 amount 是 finishInTx 结束时快照下来的真实冻结额，直接用。
+                f.status != WalletFreezeStatus.ACTIVE -> f.amount ?: 0L
                 else -> judicialActual
             }
             VisibleFreeze(freeze = f, shownAmount = shown)
@@ -180,7 +192,8 @@ class WalletFreezeLogic(
         val summary = summarize(activeFreezes(walletId))
         val shown = when {
             f.freezeType != WalletFreezeType.JUDICIAL -> f.amount ?: 0L
-            f.status != WalletFreezeStatus.ACTIVE -> 0L
+            // 终态行的 amount 是结束时快照下来的真实冻结额（见 finishInTx）。
+            f.status != WalletFreezeStatus.ACTIVE -> f.amount ?: 0L
             wallet == null -> 0L
             else -> WalletFreezeModel.judicialHold(wallet.balance, summary.amountHolds, summary.judicial)
         }
