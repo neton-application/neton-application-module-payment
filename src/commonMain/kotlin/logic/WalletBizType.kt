@@ -22,6 +22,9 @@ object WalletBizType {
     const val RED_PACKET_REFUND = 402
     const val TRANSFER_OUT = 500
     const val TRANSFER_IN = 501
+
+    /** 客服服务订阅扣款（module-cs） */
+    const val CS_SUBSCRIPTION = 600
     const val TRANSFER_REFUND = 502
     /** 签到现金奖励入账（600 段：活动/奖励类，spec MEMBER_SIGN_IN_REWARD）。 */
     const val SIGN_IN_REWARD = 600
