@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  * **只出机器码，不出文案**：客户端有中/繁/英/越四种语言，文案由各端按 `freezeType` /
  * `status` 映射（通用模块不写产品文案，分层规则见 WALLET_WITHDRAW_SPEC §3.1）。
  *
- * 司法冻结的 `reasonText` 里是法律文书细节，**永不下发**——本 VO 压根没有这个字段。
+ * 司法冻结的原因里是法律文书细节，**永不下发**（[reasonText] 对司法冻结恒为 null）。
  */
 @Serializable
 data class WalletFreezeVO(
@@ -26,6 +26,16 @@ data class WalletFreezeVO(
     val status: Int = 0,
     /** 关联单号（提现单 id 等）；账户冻结不下发任何关联信息。 */
     val refId: String? = null,
+    /**
+     * 冻结原因，**给用户看的一句人话**（运营在后台填）。
+     *
+     * 钱动不了却不说为什么，用户只会以为系统出错或者钱被吞了，然后去找客服——
+     * 所以风控冻结必须能把原因带到用户面前。
+     *
+     * 但**账户冻结（司法）恒为 null**：那栏填的是办案依据，多数司法辖区禁止 tipping-off。
+     * 这个区分由服务端投影保证，不靠各端自觉。
+     */
+    val reasonText: String? = null,
     val createdAt: Long = 0,
     val releasedAt: Long = 0,
 )

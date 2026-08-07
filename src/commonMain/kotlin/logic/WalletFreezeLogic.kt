@@ -230,9 +230,17 @@ class WalletFreezeLogic(
         op: OperatorContext,
         userId: Long,
         amount: Long,
-        refId: String,
+        refId: String?,
         reasonText: String?,
     ): PayWalletFreeze = db.transaction {
+        // 没有外部单据时自己造一个幂等键。
+        //
+        // 键里带 userId 是必须的：只用 操作员+毫秒 的话，同一个人在同一毫秒冻结两个不同
+        // 用户会算成「重复提交」，第二个人的冻结会静默返回第一个人的记录——钱没冻上，
+        // 界面还显示成功。带上 userId 之后，撞键只可能发生在「同一操作员、同一用户、
+        // 同一毫秒」，那正是需要被幂等吃掉的重复点击。
+        val effectiveRefId = refId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "manual:$userId:${op.operatorId}:${nowMillis()}"
         val wallet = PayWalletTable.oneWhere { PayWallet::userId eq userId }
             ?: walletNotFound("Wallet not found for user: $userId")
         val summary = summarize(activeFreezes(wallet.id))
@@ -249,7 +257,7 @@ class WalletFreezeLogic(
                 freezeType = WalletFreezeType.RISK_HOLD,
                 amount = amount,
                 refType = WalletFreezeRefType.WALLET_TRANSACTION,
-                refId = refId,
+                refId = effectiveRefId,
                 reasonCode = "risk_review",
                 reasonText = reasonText,
                 operatorId = op.operatorId,

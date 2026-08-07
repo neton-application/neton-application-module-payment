@@ -45,13 +45,15 @@ class PayWalletFreezeController(
     }
 }
 
-private fun WalletFreezeLogic.VisibleFreeze.toVO(): WalletFreezeVO = WalletFreezeVO(
+internal fun WalletFreezeLogic.VisibleFreeze.toVO(): WalletFreezeVO = WalletFreezeVO(
     id = freeze.id,
     freezeType = freeze.freezeType,
     amount = shownAmount,
     status = freeze.status,
     // 账户冻结（司法）不下发任何关联信息：那是法律文书号。
     refId = freeze.refId.takeIf { freeze.freezeType != WalletFreezeType.JUDICIAL },
+    // 同一条规则：司法冻结的原因是办案依据，不下发。
+    reasonText = freeze.reasonText?.takeIf { freeze.freezeType != WalletFreezeType.JUDICIAL },
     createdAt = freeze.createdAt,
     releasedAt = freeze.releasedAt,
 )
