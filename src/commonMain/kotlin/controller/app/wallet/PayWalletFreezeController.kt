@@ -50,10 +50,10 @@ internal fun WalletFreezeLogic.VisibleFreeze.toVO(): WalletFreezeVO = WalletFree
     freezeType = freeze.freezeType,
     amount = shownAmount,
     status = freeze.status,
-    // 账户冻结（司法）不下发任何关联信息：那是法律文书号。
-    refId = freeze.refId.takeIf { freeze.freezeType != WalletFreezeType.JUDICIAL },
-    // 同一条规则：司法冻结的原因是办案依据，不下发。
-    reasonText = freeze.reasonText?.takeIf { freeze.freezeType != WalletFreezeType.JUDICIAL },
+    // 只下发**运营真填的**单据号。留空时服务端造的那串幂等键（auto: 开头）不是单据，
+    // 摆到用户面前就是一行没人看得懂的乱码。
+    refId = freeze.refId.takeIf { WalletFreezeLogic.isRealDocument(it) },
+    reasonText = freeze.reasonText?.takeIf { it.isNotBlank() },
     createdAt = freeze.createdAt,
     releasedAt = freeze.releasedAt,
 )

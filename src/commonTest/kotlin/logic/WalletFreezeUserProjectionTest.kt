@@ -10,10 +10,12 @@ import kotlin.test.assertNull
 /**
  * 用户端投影：哪些字段能下发，由**服务端**说了算，不靠各端自觉。
  *
- * 这里锁的是一条法律要求而不是产品偏好：账户冻结（司法）的原因是办案依据，
- * 多数司法辖区禁止 tipping-off。风控冻结正相反——钱动不了却不给解释，用户只会
- * 以为系统出错或者钱被吞了。两者共用同一个 `reasonText` 列，所以必须有测试盯着
- * 这个分叉，否则哪天有人「统一一下」就把办案依据发到当事人手机上了。
+ * 产品决定：三类冻结的说明都下发，**包括账户冻结（司法）**——钱被冻住的人有权知道原因。
+ * 代价是运营写「冻结说明」时必须清楚它会出现在当事人手机上，后台文案已明确标注。
+ *
+ * 这里真正要钉死的是另一条：**服务端自造的幂等键不是单据号**，绝不能当文书号显示。
+ * 运营留空单据时服务端会生成 `auto:{user}:{op}:{ms}`，那串东西摆到用户面前
+ * 就是一行乱码，看着像系统出错。
  */
 class WalletFreezeUserProjectionTest {
 
@@ -40,10 +42,25 @@ class WalletFreezeUserProjectionTest {
     }
 
     @Test
-    fun judicial_reason_never_reaches_the_user() {
-        val vo = freeze(WalletFreezeType.JUDICIAL, "配合某案调查，内部依据").toVO()
-        assertNull(vo.reasonText, "账户冻结的原因是办案依据，不能下发给当事人")
-        assertNull(vo.refId, "法律文书号同理")
+    fun judicial_explanation_also_reaches_the_user() {
+        val vo = freeze(WalletFreezeType.JUDICIAL, "账户被依法冻结，请联系客服了解详情").toVO()
+        assertEquals("账户被依法冻结，请联系客服了解详情", vo.reasonText)
+        assertEquals("REF-1", vo.refId, "运营填了文书号就显示")
+    }
+
+    @Test
+    fun a_generated_key_is_never_shown_as_a_document_number() {
+        val auto = WalletFreezeLogic.AUTO_REF_PREFIX + "990000777:1:1786085961879"
+        val vo = WalletFreezeLogic.VisibleFreeze(
+            freeze = PayWalletFreeze(
+                id = 1, walletId = 1, userId = 990000777,
+                freezeType = WalletFreezeType.RISK_HOLD, amount = 10000,
+                refType = 2, refId = auto, reasonText = "资金审核中", operatorId = 1,
+            ),
+            shownAmount = 10000,
+        ).toVO()
+        assertNull(vo.refId, "自造幂等键不是单据号，不下发")
+        assertEquals("资金审核中", vo.reasonText, "说明照常下发")
     }
 
     @Test

@@ -32,8 +32,14 @@ data class PlaceJudicialFreezeRequest(
      * 法院一般冻结具体数额，全额只是「无上限」这一特例，两者走同一套逻辑。
      */
     val targetAmount: Long? = null,
-    /** 法律文书号。同时是幂等键，必填。 */
-    val legalDocNo: String,
+    /**
+     * 法律文书号，**可留空**（紧急处置常常先冻结、文书后补）。
+     *
+     * 填了就是幂等键，重复下达是 no-op，并且会作为「关联单号」显示给用户；
+     * 留空则服务端自造一个内部幂等键，那串东西**不下发**（见 WalletFreezeLogic.AUTO_REF_PREFIX）。
+     */
+    val legalDocNo: String? = null,
+    /** 冻结说明。**会显示在用户的冻结详情里**，别往里写办案细节。 */
     val reasonText: String? = null,
     /** 到期时间（epoch 毫秒）；0 = 无期限。 */
     val expiresAt: Long = 0,

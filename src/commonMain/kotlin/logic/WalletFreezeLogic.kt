@@ -217,6 +217,27 @@ class WalletFreezeLogic(
     /** 冻结记录 + 展示用金额。展示金额与记录里的 amount 不是一回事，见 [pageMyFreezes]。 */
     data class VisibleFreeze(val freeze: PayWalletFreeze, val shownAmount: Long)
 
+    /**
+     * 运营没填单据时自造的幂等键。
+     *
+     * 键里**必须带 userId**：只用 操作员+毫秒 的话，同一个人在同一毫秒冻结两个不同用户
+     * 会被算成「重复提交」，第二个人的冻结静默返回第一个人的记录——钱没冻上，界面还显示成功。
+     *
+     * 前缀 [AUTO_REF_PREFIX] 是给**下发投影**用的标记：它不是单据号，只是内部幂等键，
+     * 摆到用户面前就是一串没人看得懂的乱码，所以投影时按前缀过滤掉。
+     */
+    private fun autoRef(userId: Long, op: OperatorContext): String =
+        "$AUTO_REF_PREFIX$userId:${op.operatorId}:${nowMillis()}"
+
+    companion object {
+        /** 自动生成的幂等键前缀——带这个前缀的 refId 不是单据号，不下发给用户。 */
+        const val AUTO_REF_PREFIX = "auto:"
+
+        /** 这个 refId 是运营填的真实单据号，还是系统自造的幂等键？ */
+        fun isRealDocument(refId: String?): Boolean =
+            !refId.isNullOrBlank() && !refId.startsWith(AUTO_REF_PREFIX)
+    }
+
 
     // ==================== 后台冻结操作（spec §4.2 / §4.5）====================
 
@@ -233,14 +254,7 @@ class WalletFreezeLogic(
         refId: String?,
         reasonText: String?,
     ): PayWalletFreeze = db.transaction {
-        // 没有外部单据时自己造一个幂等键。
-        //
-        // 键里带 userId 是必须的：只用 操作员+毫秒 的话，同一个人在同一毫秒冻结两个不同
-        // 用户会算成「重复提交」，第二个人的冻结会静默返回第一个人的记录——钱没冻上，
-        // 界面还显示成功。带上 userId 之后，撞键只可能发生在「同一操作员、同一用户、
-        // 同一毫秒」，那正是需要被幂等吃掉的重复点击。
-        val effectiveRefId = refId?.trim()?.takeIf { it.isNotEmpty() }
-            ?: "manual:$userId:${op.operatorId}:${nowMillis()}"
+        val effectiveRefId = refId?.trim()?.takeIf { it.isNotEmpty() } ?: autoRef(userId, op)
         val wallet = PayWalletTable.oneWhere { PayWallet::userId eq userId }
             ?: walletNotFound("Wallet not found for user: $userId")
         val summary = summarize(activeFreezes(wallet.id))
@@ -277,11 +291,12 @@ class WalletFreezeLogic(
         op: OperatorContext,
         userId: Long,
         targetAmount: Long?,
-        legalDocNo: String,
+        legalDocNo: String?,
         reasonText: String?,
         expiresAt: Long,
     ): PayWalletFreeze = db.transaction {
-        requireParam(legalDocNo.isNotBlank()) { "legal document number is required" }
+        // 文书号可留空：紧急处置往往先冻结、文书后补。
+        val effectiveDocNo = legalDocNo?.trim()?.takeIf { it.isNotEmpty() } ?: autoRef(userId, op)
         requireParam(targetAmount == null || targetAmount > 0) {
             "judicial target amount must be positive when present: $targetAmount"
         }
@@ -297,7 +312,7 @@ class WalletFreezeLogic(
                 freezeType = WalletFreezeType.JUDICIAL,
                 amount = targetAmount,
                 refType = WalletFreezeRefType.LEGAL_DOCUMENT,
-                refId = legalDocNo,
+                refId = effectiveDocNo,
                 reasonCode = "judicial",
                 reasonText = reasonText,
                 operatorId = op.operatorId,
