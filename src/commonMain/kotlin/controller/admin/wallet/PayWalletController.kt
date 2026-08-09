@@ -34,9 +34,12 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,
-        @Query userId: Long? = null
+        @Query userId: Long? = null,
+        @Query username: String? = null,
+        @Query nickname: String? = null,
+        @Query mobile: String? = null,
     ): PageResponse<PayWalletVO> {
-        val result = payWalletLogic.pageWallets(pageNo, pageSize, userId)
+        val result = payWalletLogic.pageWallets(pageNo, pageSize, userId, username, nickname, mobile)
         // 一次查完整页共用，避免逐行去问变成 N+1
         val frozen = payWalletLogic.judiciallyFrozenWalletIds()
         return PageResponse(

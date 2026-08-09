@@ -283,14 +283,49 @@ class PayWalletLogic(
     /** 当前处于账户冻结的钱包 id，供后台列表判断显不显示「账户解冻」。 */
     suspend fun judiciallyFrozenWalletIds(): Set<Long> = freezes.judiciallyFrozenWalletIds()
 
+    /**
+     * 按用户属性（用户名/昵称/手机号）找出对应的用户 id。
+     *
+     * 三者都为空时返回 null，表示「这次不按用户属性筛」——与「筛了但没匹配到任何人」
+     * （返回空列表）是两回事，后者必须筛出空结果，不能退化成全量。
+     *
+     * 钱包表只有 user_id，这些字段在 member 那边。payment 已经依赖 member，
+     * 这里只读它的用户表；不为了一次后台搜索去建一层端口加适配器。
+     */
+    private suspend fun matchingUserIds(
+        username: String?,
+        nickname: String?,
+        mobile: String?,
+    ): List<Long>? {
+        if (username.isNullOrBlank() && nickname.isNullOrBlank() && mobile.isNullOrBlank()) return null
+        return table.MemberTable.query {
+            where {
+                and(
+                    whenNotBlank(nickname) { model.Member::nickname like "%$it%" },
+                    whenNotBlank(mobile) { model.Member::mobile like "%$it%" },
+                    whenNotBlank(username) { model.Member::username like "%$it%" },
+                )
+            }
+        }.list().map { m -> m.id }
+    }
+
     suspend fun pageWallets(
         page: Int,
         size: Int,
-        userId: Long? = null
+        userId: Long? = null,
+        username: String? = null,
+        nickname: String? = null,
+        mobile: String? = null,
     ): PageResponse<PayWallet> {
+        val uids = matchingUserIds(username, nickname, mobile)
         val result = PayWalletTable.query {
             where {
-                whenPresent(userId) { PayWallet::userId eq it }
+                and(
+                    whenPresent(userId) { PayWallet::userId eq it },
+                    // uids 为空列表时生成 `1 = 0`（SqlBuilder 的 In 分支），
+                    // 搜不到人就该是零条，而不是把筛选条件悄悄丢掉
+                    whenPresent(uids) { PayWallet::userId `in` it },
+                )
             }
             orderBy(PayWallet::id.desc())
         }.page(page, size)
