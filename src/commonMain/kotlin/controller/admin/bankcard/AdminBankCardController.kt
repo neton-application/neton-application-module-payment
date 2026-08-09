@@ -36,4 +36,15 @@ class AdminBankCardController(private val logic: UserBankCardLogic) {
     @Permission("pay:bank-card:reveal")
     suspend fun reveal(identity: Identity, ctx: HttpContext, @PathVariable id: Long): String =
         logic.adminRevealCardNo(op = OperatorContext.from(identity, ctx), id = id)
+
+    /**
+     * 解绑用户的银行卡。独立权限点：查卡是日常，替用户处置收款通道不是。
+     *
+     * 有未打款的提现单指着这张卡时会被拒绝（400），并带出是哪几张单子。
+     * 返回 false = 卡不存在或已解绑，重复点不算错。
+     */
+    @Post("/unbind/{id}")
+    @Permission("pay:bank-card:unbind")
+    suspend fun unbind(identity: Identity, ctx: HttpContext, @PathVariable id: Long): Boolean =
+        logic.adminUnbindBankCard(op = OperatorContext.from(identity, ctx), id = id)
 }

@@ -4,8 +4,10 @@ import kotlinx.serialization.Serializable
 import logic.crypto.BankCardCrypto
 import model.UserBankCard
 import model.PaySensitiveAuditLog
+import model.WalletWithdrawOrder
 import table.UserBankCardTable
 import table.PaySensitiveAuditLogTable
+import table.WalletWithdrawOrderTable
 import neton.database.dsl.*
 import neton.database.api.DbContext
 import neton.database.dbContext
@@ -131,6 +133,79 @@ class UserBankCardLogic(
         }
         if (updated > 0) log.info("bank-card.deleted", mapOf("cardId" to id, "userId" to userId))
         return updated > 0
+    }
+
+    /**
+     * 后台解绑用户的银行卡（P4-B1）。
+     *
+     * 与用户自己删卡是两件事，所以不复用 [deleteBankCard]：
+     *
+     *  - **拒绝有在途提现的卡**。提现单记的是 bankCardId，PENDING/APPROVED/PROCESSING
+     *    这三个状态都还没打款，卡一解绑，打款时就查不到收款账户了；这种单子既不能打也
+     *    不好退，只能人工捞。让它在解绑这一刻失败，比在打款那一刻失败便宜得多。
+     *  - **写审计**。这是运营代替用户处置资金通道，和 [adminRevealCardNo] 同级，
+     *    必须留下经办人/IP/时间，事后能回答「谁把这张卡解掉的」。
+     *
+     * 软删（deletedAt）而不是物理删：已完成的提现单还指着这张卡，行没了历史就断了。
+     *
+     * @return false = 卡不存在或已解绑（幂等，重复点不报错）
+     */
+    suspend fun adminUnbindBankCard(op: OperatorContext, id: Long): Boolean {
+        val card = UserBankCardTable.get(id) ?: return false
+        if (card.deletedAt != 0L) return false
+
+        val blocking = WalletWithdrawOrderTable.query {
+            where {
+                and(
+                    WalletWithdrawOrder::bankCardId eq id,
+                    WalletWithdrawOrder::status `in` listOf(
+                        WithdrawStateMachine.PENDING,
+                        WithdrawStateMachine.APPROVED,
+                        WithdrawStateMachine.PROCESSING,
+                    ),
+                )
+            }
+        }.list()
+        if (blocking.isNotEmpty()) {
+            walletBadRequest(
+                "该卡有 ${blocking.size} 笔提现尚未打款（单号 ${blocking.joinToString(", ") { "#" + it.id }}），" +
+                    "请先处理这些提现单再解绑"
+            )
+        }
+
+        val now = nowMillis()
+        val updated = UserBankCardTable.query {
+            where {
+                and(
+                    UserBankCard::id eq id,
+                    UserBankCard::deletedAt eq 0L,
+                )
+            }
+        }.update { set(UserBankCard::deletedAt, now) }
+        if (updated == 0L) return false
+
+        PaySensitiveAuditLogTable.insert(
+            PaySensitiveAuditLog(
+                operatorId = op.operatorId,
+                operatorName = op.operatorName,
+                operatorRole = op.operatorRole,
+                action = "BANK_CARD_UNBIND",
+                targetType = "BANK_CARD",
+                targetId = id,
+                targetUserId = card.userId,
+                ip = op.ip,
+                userAgent = op.userAgent,
+                traceId = op.traceId,
+            )
+        )
+        log.warn(
+            "bank-card.unbind.audit",
+            mapOf(
+                "operatorId" to op.operatorId, "cardId" to id, "cardUserId" to card.userId,
+                "masked" to card.cardNoMasked, "traceId" to (op.traceId ?: ""),
+            ),
+        )
+        return true
     }
 
     /**
