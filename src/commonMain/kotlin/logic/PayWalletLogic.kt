@@ -280,6 +280,9 @@ class PayWalletLogic(
         return created
     }
 
+    /** 当前处于账户冻结的钱包 id，供后台列表判断显不显示「账户解冻」。 */
+    suspend fun judiciallyFrozenWalletIds(): Set<Long> = freezes.judiciallyFrozenWalletIds()
+
     suspend fun pageWallets(
         page: Int,
         size: Int,

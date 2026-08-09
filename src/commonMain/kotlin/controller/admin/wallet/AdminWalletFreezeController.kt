@@ -96,4 +96,17 @@ class AdminWalletFreezeController(private val logic: WalletFreezeLogic) {
         ctx: HttpContext,
         @PathVariable id: Long,
     ): Boolean = logic.release(OperatorContext.from(identity, ctx), id)
+
+    /**
+     * 解除某钱包的账户冻结。给钱包列表用——那里只有钱包，没有冻结记录 id。
+     *
+     * 返回 false = 该钱包本来就没有生效中的账户冻结（幂等，重复点不报错）。
+     */
+    @Post("/release-account/{walletId}")
+    @Permission("pay:wallet-freeze:release")
+    suspend fun releaseAccount(
+        identity: Identity,
+        ctx: HttpContext,
+        @PathVariable walletId: Long,
+    ): Boolean = logic.releaseAccountFreeze(OperatorContext.from(identity, ctx), walletId)
 }

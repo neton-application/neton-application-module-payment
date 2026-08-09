@@ -89,6 +89,30 @@ class WalletFreezeLogic(
         activeFreezes(walletId).any { it.freezeType == WalletFreezeType.JUDICIAL }
 
     /**
+     * 当前处于账户冻结的钱包 id。后台钱包列表据此决定显不显示「账户解冻」。
+     *
+     * 不按钱包 id 过滤而是全捞：账户冻结是执法发函才会有的低频事件，DB 上一个钱包
+     * 最多一条 ACTIVE，整表也就个位数。按页 IN 查要 DSL 支持 IN，收益不抵复杂度；
+     * 更要紧的是，逐个钱包调 [isJudiciallyFrozen] 会把列表变成 N+1。
+     *
+     * 到期语义与 [activeFreezes] 一致：过了 `expires_at` 的不算，哪怕 status 还是 ACTIVE。
+     */
+    suspend fun judiciallyFrozenWalletIds(): Set<Long> {
+        val now = nowMillis()
+        return PayWalletFreezeTable.query {
+            where {
+                and(
+                    PayWalletFreeze::status eq WalletFreezeStatus.ACTIVE,
+                    PayWalletFreeze::freezeType eq WalletFreezeType.JUDICIAL,
+                )
+            }
+        }.list()
+            .filter { it.expiresAt <= 0 || it.expiresAt > now }
+            .map { it.walletId }
+            .toSet()
+    }
+
+    /**
      * 按冻结记录重算 `freeze_price` 缓存并落库。
      *
      * **必须与冻结记录的改动在同一事务内。** 分两个事务的话，中间那一刻钱包的
@@ -329,6 +353,27 @@ class WalletFreezeLogic(
         }
         log.info("wallet.freeze.release", mapOf("freezeId" to freezeId, "operatorId" to op.operatorId))
         finishInTx(freezeId, WalletFreezeStatus.RELEASED)
+    }
+
+    /**
+     * 解除某个钱包的账户冻结。返回 false 表示它本来就没被账户冻结。
+     *
+     * 后台钱包列表用这个：那里手上只有钱包，没有冻结记录 id，让运营为了解冻先去
+     * 冻结列表里翻出对应那条，是把内部数据结构摊给使用者看。
+     *
+     * 只认 JUDICIAL。金额型冻结（提现占用、单笔风控）各有各的解法，不该被
+     * 一个「账户解冻」顺手带走 —— 那会让人以为解的是账户状态，实际连别人的
+     * 提现占用一起放了。
+     */
+    suspend fun releaseAccountFreeze(op: OperatorContext, walletId: Long): Boolean = db.transaction {
+        val judicial = activeFreezes(walletId)
+            .firstOrNull { it.freezeType == WalletFreezeType.JUDICIAL }
+            ?: return@transaction false
+        log.info(
+            "wallet.freeze.release-account",
+            mapOf("walletId" to walletId, "freezeId" to judicial.id, "operatorId" to op.operatorId),
+        )
+        finishInTx(judicial.id, WalletFreezeStatus.RELEASED)
     }
 
     /**
