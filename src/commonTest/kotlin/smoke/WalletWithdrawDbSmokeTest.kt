@@ -85,7 +85,7 @@ class WalletWithdrawDbSmokeTest {
             // 「global conservation」永久欠一笔（有余额没账变）。
             val wallet = PayWalletTable.insert(PayWallet(userId = TEST_UID))
             assertEquals(0L, wallet.freezePrice)
-            payWallet.manualRecharge(TEST_UID, 100_000, "smoke 期初余额")
+            payWallet.manualRecharge(OperatorContext.of(1), TEST_UID, 100_000, "smoke 期初余额")
 
             // ========== 1. 银行卡链路 ==========
             val view = cards.bindBankCard(TEST_UID, "张三", "招商银行", "CMB", "6225 7600 1234 5678")

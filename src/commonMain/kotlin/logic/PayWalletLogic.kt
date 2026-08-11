@@ -5,6 +5,8 @@ import model.PayWallet
 import model.PayWalletFreeze
 import model.PayWalletTransaction
 import model.PayWalletRecharge
+import model.PaySensitiveAuditLog
+import table.PaySensitiveAuditLogTable
 import table.PayWalletTable
 import table.PayWalletTransactionTable
 import table.PayWalletRechargeTable
@@ -44,9 +46,17 @@ class PayWalletLogic(
         const val BIZ_TYPE_TRANSFER_REFUND = 502           // 转账异常回滚（biz_id=transfer_id）
     }
 
+    /** 分 → 元，只用于给人看的错误消息。 */
+    private fun yuan(fen: Long): String {
+        val abs = if (fen < 0) -fen else fen
+        val sign = if (fen < 0) "-" else ""
+        return "$sign${abs / 100}.${(abs % 100).toString().padStart(2, '0')}"
+    }
+
     private suspend fun requireWalletByUserId(userId: Long): PayWallet {
+        // 404 而不是 500：查无此钱包是事实，不是故障。
         return PayWalletTable.oneWhere { PayWallet::userId eq userId }
-            ?: throw IllegalArgumentException("Wallet not found for userId: $userId")
+            ?: walletNotFound("该用户还没有钱包：userId=$userId")
     }
 
     suspend fun getWallet(userId: Long): PayWallet? {
@@ -63,21 +73,81 @@ class PayWalletLogic(
         return PayWalletTable.oneWhere { PayWallet::userId eq userId }
     }
 
-    suspend fun adjustBalance(userId: Long, balance: Long) {
+    suspend fun adjustBalance(op: OperatorContext, userId: Long, balance: Long) {
         val wallet = requireWalletByUserId(userId)
         val diff = balance - wallet.balance
         updateBalance(wallet.id, diff, BIZ_TYPE_ADMIN_ADJUST, 0L, "Admin adjust")
+        auditManualMove(op, "WALLET_ADJUST", wallet.id, userId, diff, "校正为 $balance")
     }
 
     /**
      * admin 手动充值（银行汇款、异常手动到账等线下入账）：正数入账，
      * 备注写进 ledger title 供审计追溯。无钱包用户懒创建（与充值同语义）。
      */
-    suspend fun manualRecharge(userId: Long, amount: Long, remark: String) {
+    suspend fun manualRecharge(op: OperatorContext, userId: Long, amount: Long, remark: String) {
         require(amount > 0) { "manual recharge amount must be positive" }
         val wallet = getWalletByUserId(userId) ?: db.transaction { getOrCreateWalletInTx(userId) }
         updateBalance(wallet.id, amount, BIZ_TYPE_ADMIN_ADJUST, 0L, "手动充值：$remark")
         log.info("wallet.manual-recharge", mapOf("userId" to userId, "amount" to amount, "remark" to remark))
+        auditManualMove(op, "WALLET_MANUAL_RECHARGE", wallet.id, userId, amount, remark)
+    }
+
+    /**
+     * admin 手动划扣：[manualRecharge] 的逆操作，用于冲正充错、重复到账这类人工失误。
+     *
+     * 三处与充值不对称，都是有意的：
+     *
+     *  - **钱包不存在直接失败**，不像充值那样懒创建。没有钱包就没有钱可扣，
+     *    顺手建一个空钱包再报余额不足，只会让人以为扣过了。
+     *  - **不允许扣成负数、也不许侵占冻结资金**。两条闸门都在 [applyBalanceUpdate]
+     *    里，走同一条路径，不在这里重复判——重复判早晚会和那边分叉。
+     *  - **备注必填**（controller 校验）：冲正的是哪一笔、依据是什么，
+     *    事后只能从这里看。
+     */
+    suspend fun manualDeduct(op: OperatorContext, userId: Long, amount: Long, remark: String) {
+        require(amount > 0) { "manual deduct amount must be positive" }
+        val wallet = requireWalletByUserId(userId)
+        updateBalance(wallet.id, -amount, BIZ_TYPE_ADMIN_ADJUST, 0L, "手动划扣：$remark")
+        log.warn("wallet.manual-deduct", mapOf("userId" to userId, "amount" to amount, "remark" to remark))
+        auditManualMove(op, "WALLET_MANUAL_DEDUCT", wallet.id, userId, -amount, remark)
+    }
+
+    /**
+     * 人工改余额的审计（不可抵赖，P0/V007）。
+     *
+     * 这三个入口能凭空增减用户的钱，此前一条审计都没写——查看银行卡号反而写。
+     * ledger 里虽有流水，但那只说明「钱动了多少」，答不出「谁动的、从哪台机器」。
+     */
+    private suspend fun auditManualMove(
+        op: OperatorContext,
+        action: String,
+        walletId: Long,
+        userId: Long,
+        delta: Long,
+        remark: String,
+    ) {
+        PaySensitiveAuditLogTable.insert(
+            PaySensitiveAuditLog(
+                operatorId = op.operatorId,
+                operatorName = op.operatorName,
+                operatorRole = op.operatorRole,
+                action = action,
+                targetType = "WALLET",
+                targetId = walletId,
+                targetUserId = userId,
+                ip = op.ip,
+                userAgent = op.userAgent,
+                traceId = op.traceId,
+            )
+        )
+        log.warn(
+            "wallet.manual-move.audit",
+            mapOf(
+                "operatorId" to op.operatorId, "action" to action, "walletId" to walletId,
+                "userId" to userId, "delta" to delta, "remark" to remark,
+                "traceId" to (op.traceId ?: ""),
+            ),
+        )
     }
 
     suspend fun updateBalance(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
@@ -99,14 +169,20 @@ class PayWalletLogic(
 
         val newBalance = wallet.balance + price
         if (newBalance < 0) {
-            throw IllegalArgumentException("Insufficient balance for wallet: $walletId")
+            // 400 而不是 500：余额不够是调用方的事实，不是服务端故障。
+            // 抛 IllegalArgumentException 会被兜成 Internal Server Error，
+            // 既污染错误率、又让后台只看到「服务器内部错误」而不知道是钱不够。
+            walletBadRequest(
+                "余额不足：当前 ${yuan(wallet.balance)} 元，本次需扣 ${yuan(-price)} 元"
+            )
         }
         // 普通借记不得侵占被冻结资金（R2：可用余额 = balance − freezePrice）。
         // freezePrice 默认 0 时此判定退化为无影响，对存量消费路径向后兼容。
         // 提现实扣走 deductFrozen（同时减 balance 与 freezePrice），不经此路径。
         if (price < 0 && !PayWalletFreezeRules.debitKeepsFrozenSafe(newBalance, wallet.freezePrice)) {
-            throw IllegalArgumentException(
-                "Insufficient available balance (frozen funds protected) for wallet: $walletId"
+            walletBadRequest(
+                "可用余额不足：余额 ${yuan(wallet.balance)} 元中有 ${yuan(wallet.freezePrice)} 元被冻结，" +
+                    "本次需扣 ${yuan(-price)} 元"
             )
         }
 

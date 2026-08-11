@@ -62,7 +62,7 @@ class WalletFreezeDbSmokeTest {
             // 有钱包余额却没有对应账变。测试数据不该给一致性检查制造噪音。
             val wallet = PayWalletTable.insert(PayWallet(userId = TEST_UID))
             assertEquals(0L, wallet.freezePrice)
-            payWallet.manualRecharge(TEST_UID, 10_000, "smoke 期初余额")
+            payWallet.manualRecharge(OperatorContext.of(1), TEST_UID, 10_000, "smoke 期初余额")
 
             // ---- 1. 单笔风控冻结：金额确定，可用余额随之减少 ----
             val hold = freezes.placeRiskHold(op, TEST_UID, 3_000, refId = "SMOKE-RISK-1", reasonText = "smoke")
@@ -85,7 +85,7 @@ class WalletFreezeDbSmokeTest {
             assertEquals(10_000L, PayWalletTable.get(wallet.id)!!.freezePrice, "全额冻结 = 全部余额")
 
             // ---- 3. 到账即冻（本文件的核心用例）----
-            payWallet.manualRecharge(TEST_UID, 2_000, "smoke 到账即冻")
+            payWallet.manualRecharge(OperatorContext.of(1), TEST_UID, 2_000, "smoke 到账即冻")
             val afterCredit = PayWalletTable.get(wallet.id)!!
             assertEquals(12_000L, afterCredit.balance)
             assertEquals(12_000L, afterCredit.freezePrice, "入账必须被司法冻结吸收，可用余额仍为 0")
