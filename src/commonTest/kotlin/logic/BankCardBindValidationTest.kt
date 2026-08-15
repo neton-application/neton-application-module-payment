@@ -37,6 +37,7 @@ private object ExplodingDb : DbContext {
     override suspend fun query(built: BuiltSql): List<Row> = fail()
     override suspend fun executeBuilt(built: BuiltSql): Long = fail()
     override suspend fun <R> transaction(block: suspend DbContext.() -> R): R = fail()
+    override suspend fun inTransaction(): Boolean = fail()
     private fun fail(): Nothing =
         throw AssertionError("invalid card number must be rejected before touching the database")
 }
