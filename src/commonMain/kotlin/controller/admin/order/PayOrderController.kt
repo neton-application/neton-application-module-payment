@@ -31,7 +31,6 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
     @Permission("pay:order:create")
     suspend fun submit(@Body request: PayOrderSubmitRequest): logic.PayOrderLogic.PrepayVO {
         val order = PayOrder(
-            appId = request.appId,
             merchantOrderId = request.merchantOrderId,
             subject = request.subject,
             body = request.body,
@@ -48,9 +47,8 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,
-        @Query appId: Long? = null,
         @Query channelCode: String? = null,
         @Query merchantOrderId: String? = null,
         @Query status: Int? = null
-    ) = payOrderLogic.page(pageNo, pageSize, appId, channelCode, merchantOrderId, status)
+    ) = payOrderLogic.page(pageNo, pageSize, channelCode, merchantOrderId, status)
 }

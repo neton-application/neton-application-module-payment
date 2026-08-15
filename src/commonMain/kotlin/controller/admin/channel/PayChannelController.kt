@@ -32,20 +32,18 @@ class PayChannelController(
 
     @Get("/get-by-app-and-code")
     @Permission("pay:channel:query")
-    suspend fun getByAppAndCode(@Query appId: Long, @Query code: String) =
-        channelLogic.getByAppAndCode(appId, code)
+    suspend fun getByCode(@Query code: String) = channelLogic.getByCode(code)
 
     @Get("/get-enable-code-list")
     @Permission("pay:channel:query")
-    suspend fun getEnableCodeList(@Query appId: Long) = channelLogic.getEnableCodeList(appId)
+    suspend fun getEnableCodeList() = channelLogic.getEnableCodeList()
 
     @Get("/page")
     @Permission("pay:channel:page")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,
-        @Query appId: Long? = null,
         @Query code: String? = null,
         @Query status: Int? = null
-    ) = channelLogic.page(pageNo, pageSize, appId, code, status)
+    ) = channelLogic.page(pageNo, pageSize, code, status)
 }

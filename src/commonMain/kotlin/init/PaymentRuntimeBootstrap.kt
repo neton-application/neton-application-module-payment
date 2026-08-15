@@ -8,8 +8,8 @@ import logic.PayOrderLogic
 import logic.UserBankCardLogic
 import logic.crypto.BankCardCrypto
 import logic.crypto.EnvWalletCryptoKeyProvider
-import channel.PayChannelRegistry
-import port.PayOrderPaidPort
+import channel.PayPlatformRegistry
+import neton.core.event.DomainEventBus
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -19,12 +19,28 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 object PaymentRuntimeBootstrap {
     @OptIn(ExperimentalEncodingApi::class)
     fun initialize(ctx: NetonContext) {
-        // 支付订单：渠道 registry（默认全 mock）+ 可选 PayOrderPaidPort（业务方 application 层 bind）。
-        // 非 @Logic，因为要注入 registry/paidPort，生成器只会注 log。
+        // 支付订单：渠道 registry（默认全 mock）+ 可选事件总线（装配层收集各模块监听者后 bind）。
+        // 非 @Logic，因为要注入 registry/events，生成器只会注 log。
+        // 在线充值到账：支付成功 → 充值单已支付 → 余额入账。
+        // 在此注册而不是装配层，是因为它依赖 @Logic 装配的 PayWalletLogic，
+        // 而装配层的 bind 跑在模块初始化之前，那时它还不存在。
+        ctx.get(neton.core.event.DomainEventBus::class).register(
+            logic.WalletRechargePaidListener(ctx.get(logic.PayWalletLogic::class))
+        )
+
+        // 本模块的全局设置定义登记进注册表，后台可见可改。
+        ctx.getOrNull(setting.SettingDefinitionRegistry::class)
+            ?.register(setting.PaymentSettingKeys.definitions)
+
         val orderLog = ctx.get(LoggerFactory::class).get("logic.pay-order")
-        val registry = ctx.getOrNull(PayChannelRegistry::class) ?: PayChannelRegistry.defaultMock()
-        val paidPort = ctx.getOrNull(PayOrderPaidPort::class)
-        ctx.bind(PayOrderLogic::class, PayOrderLogic(log = orderLog, channels = registry, paidPort = paidPort))
+        val registry = ctx.getOrNull(PayPlatformRegistry::class) ?: PayPlatformRegistry.default()
+        // 总线由框架在启动最早期绑定，这里必然取得到。用 get 而不是 getOrNull：
+        // 后者配上 PayOrderLogic 里的 `events?.publish(...)`，漏装配时是整条链路静默空转
+        // （在线充值不自动到账，且没有任何信号），正是之前发生过的事。
+        ctx.bind(
+            PayOrderLogic::class,
+            PayOrderLogic(log = orderLog, platforms = registry, events = ctx.get(DomainEventBus::class)),
+        )
 
         // 银行卡卡号信封加密（P4-B1）：env 主密钥 → BankCardCrypto → 注入 UserBankCardLogic。
         // 手动 ctx.bind 早于生成的 PaymentLogicInitializer（absent-才-bind，不会被覆盖）；

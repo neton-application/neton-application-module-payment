@@ -21,7 +21,6 @@ class PayRefundLogic(
     suspend fun page(
         page: Int,
         size: Int,
-        appId: Long? = null,
         channelCode: String? = null,
         merchantRefundId: String? = null,
         status: Int? = null
@@ -29,7 +28,6 @@ class PayRefundLogic(
         val result = PayRefundTable.query {
             where {
                 and(
-                    whenPresent(appId) { PayRefund::appId eq it },
                     whenNotBlank(channelCode) { PayRefund::channelCode eq it },
                     whenNotBlank(merchantRefundId) { PayRefund::merchantRefundId eq it },
                     whenPresent(status) { PayRefund::status eq it }

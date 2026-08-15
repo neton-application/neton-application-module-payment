@@ -5,8 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class PayOrderDetailVO(
     val id: Long = 0,
-    val appId: Long? = null,
-    val appName: String? = null,
     val merchantOrderId: String? = null,
     val subject: String? = null,
     val body: String? = null,

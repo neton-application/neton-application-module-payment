@@ -18,8 +18,11 @@ class PayChannelLogic(
     suspend fun create(request: CreatePayChannelRequest): Long {
         return PayChannelTable.insert(
             PayChannel(
-                appId = request.appId,
                 code = request.code,
+                platformCode = request.platformCode,
+                method = request.method,
+                platformChannelId = request.platformChannelId,
+                displayMode = request.displayMode,
                 config = request.config,
                 status = request.status,
                 feeRate = request.feeRate,
@@ -34,8 +37,11 @@ class PayChannelLogic(
         PayChannelTable.update(
             PayChannel(
                 id = request.id,
-                appId = request.appId,
                 code = request.code,
+                platformCode = request.platformCode,
+                method = request.method,
+                platformChannelId = request.platformChannelId,
+                displayMode = request.displayMode,
                 config = request.config,
                 status = request.status,
                 feeRate = request.feeRate,
@@ -50,34 +56,30 @@ class PayChannelLogic(
         PayChannelTable.destroy(id)
     }
 
-    suspend fun getByAppAndCode(appId: Long, code: String): PayChannel? {
-        return PayChannelTable.oneWhere {
-            and(PayChannel::appId eq appId, PayChannel::code eq code)
-        }
-    }
+    /** 渠道按 code 全局唯一 —— 单应用部署不需要再按 app 维度分组。 */
+    suspend fun getByCode(code: String): PayChannel? =
+        PayChannelTable.oneWhere { PayChannel::code eq code }
 
-    suspend fun getEnableCodeList(appId: Long): List<String> {
-        return PayChannelTable.query {
-            where {
-                and(
-                    PayChannel::appId eq appId,
-                    PayChannel::status eq 1
-                )
-            }
+    /** 启用中的通道，供收银台展示。 */
+    suspend fun enabledForApp(): List<PayChannel> =
+        PayChannelTable.query {
+            where { PayChannel::status eq 1 }
+        }.list()
+
+    suspend fun getEnableCodeList(): List<String> =
+        PayChannelTable.query {
+            where { PayChannel::status eq 1 }
         }.list().map { it.code }
-    }
 
     suspend fun page(
         page: Int,
         size: Int,
-        appId: Long? = null,
         code: String? = null,
         status: Int? = null
     ): PageResponse<PayChannel> {
         val result = PayChannelTable.query {
             where {
                 and(
-                    whenPresent(appId) { PayChannel::appId eq it },
                     whenNotBlank(code) { PayChannel::code eq it },
                     whenPresent(status) { PayChannel::status eq it }
                 )

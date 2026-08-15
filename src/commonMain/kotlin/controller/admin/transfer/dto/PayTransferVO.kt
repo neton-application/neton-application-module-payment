@@ -5,7 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class PayTransferVO(
     val id: Long = 0,
-    val appId: Long? = null,
     val channelCode: String? = null,
     val merchantTransferId: String? = null,
     val type: Int? = null,

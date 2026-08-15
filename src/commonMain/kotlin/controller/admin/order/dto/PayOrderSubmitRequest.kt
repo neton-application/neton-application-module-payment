@@ -7,9 +7,6 @@ import neton.validation.annotations.Size
 
 @Serializable
 data class PayOrderSubmitRequest(
-    @property:Min(1)
-    val appId: Long,
-
     @property:NotBlank
     @property:Size(min = 2, max = 64)
     val merchantOrderId: String,

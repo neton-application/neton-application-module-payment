@@ -24,14 +24,12 @@ class PayTransferController {
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,
-        @Query appId: Long? = null,
         @Query channelCode: String? = null,
         @Query merchantTransferId: String? = null,
         @Query status: Int? = null
     ) = PayTransferTable.query {
         where {
             and(
-                whenPresent(appId) { PayTransfer::appId eq it },
                 whenNotBlank(channelCode) { PayTransfer::channelCode eq it },
                 whenNotBlank(merchantTransferId) { PayTransfer::merchantTransferId eq it },
                 whenPresent(status) { PayTransfer::status eq it }

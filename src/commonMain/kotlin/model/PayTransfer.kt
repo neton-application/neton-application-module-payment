@@ -11,7 +11,6 @@ import neton.database.annotations.UpdatedAt
 data class PayTransfer(
     @Id
     val id: Long = 0,
-    val appId: Long,
     val channelCode: String? = null,
     val merchantTransferId: String,
     val type: Int,

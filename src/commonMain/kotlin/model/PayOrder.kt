@@ -11,14 +11,14 @@ import neton.database.annotations.UpdatedAt
 data class PayOrder(
     @Id
     val id: Long = 0,
-    val appId: Long,
     val merchantOrderId: String,
     val subject: String,
     val body: String? = null,
     val price: Long,
     val channelCode: String? = null,
     val channelOrderNo: String? = null,
-    val status: Int = 1,
+    /** 0=待支付 1=已支付 2=已退款 3=已关闭。默认待支付 —— 金额记录默认成"已付款"是危险的。 */
+    val status: Int = 0,
     val userIp: String? = null,
     val expireTime: Long? = null,
     val successTime: Long? = null,

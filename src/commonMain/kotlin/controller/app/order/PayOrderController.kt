@@ -20,7 +20,6 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
     @Post("/submit")
     suspend fun submit(@Body request: PayOrderSubmitRequest): PayOrderLogic.PrepayVO {
         val order = PayOrder(
-            appId = request.appId,
             merchantOrderId = request.merchantOrderId,
             subject = request.subject,
             body = request.body,
