@@ -58,7 +58,13 @@ class PayOrderLogic(
         const val REFUND_STATUS_SUCCESS = 2
     }
 
-    /** 下单结果：订单 id + 渠道支付地址（客户端拉起支付）。 */
+    /**
+     * 下单结果：订单 id + 渠道支付地址（客户端拉起支付）。
+     *
+     * 必须可序列化：它是下单接口的响应体，少了注解会被当普通对象走 toString，
+     * 客户端拿到的是 `PrepayVO(orderId=7, ...)` 这样一串没法解析的文本。
+     */
+    @kotlinx.serialization.Serializable
     data class PrepayVO(
         val orderId: Long,
         /** 呈现方式：跳转 / 二维码 / SDK 参数，前端据此决定怎么送用户去付款。 */

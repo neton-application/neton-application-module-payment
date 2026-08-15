@@ -18,6 +18,7 @@ enum class PayMethod { ALIPAY, WECHAT, UNIONPAY, BANK_CARD, OTHER }
  * —— H5 给跳转地址、扫码给二维码内容、APP 给一串待签名的 SDK 参数。
  * 只回一个地址字符串会逼前端按通道码硬猜，每接一条通道就改一次前端。
  */
+@kotlinx.serialization.Serializable
 enum class PayDisplayMode { REDIRECT_URL, QR_CODE, SDK_PARAMS }
 
 /** 下单结果。 */
