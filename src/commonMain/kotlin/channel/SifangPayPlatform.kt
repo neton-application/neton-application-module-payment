@@ -9,11 +9,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import model.PayChannel
 import model.PayOrder
-import neton.http.client.NetonHttpBody
-import neton.http.client.NetonHttpClient
+import neton.http.client.HttpClientBody
+import neton.http.client.HttpClient
 import neton.http.client.create
-import neton.http.client.NetonHttpMethod
-import neton.http.client.NetonHttpRequest
+import neton.http.client.HttpClientMethod
+import neton.http.client.HttpClientRequest
 import neton.security.digest.Md5
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -41,7 +41,7 @@ import kotlin.time.ExperimentalTime
 @OptIn(ExperimentalTime::class)
 class SifangPayPlatform(
     override val platformCode: String,
-    private val http: NetonHttpClient = NetonHttpClient.create { requestMillis = 15_000 },
+    private val http: HttpClient = HttpClient.create { requestMillis = 15_000 },
     /** 回调地址，由部署方给出（平台需要能公网访问到我们）。 */
     private val notifyUrlOf: (PayChannel) -> String = { "" },
 ) : AbstractPayPlatform() {
@@ -128,7 +128,7 @@ class SifangPayPlatform(
     private suspend fun post(url: String, params: Map<String, Any>, key: String): JsonObject? {
         val signed = params + ("sign" to signOf(params.mapValues { it.value.toString() }, key))
         val body = JsonObject(signed.mapValues { (_, v) -> JsonPrimitive(v.toString()) }).toString()
-        return postJson(http, url, NetonHttpBody.Json(body))
+        return postJson(http, url, HttpClientBody.Json(body))
     }
 
     /**

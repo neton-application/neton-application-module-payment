@@ -8,10 +8,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import model.PayChannel
-import neton.http.client.NetonHttpBody
-import neton.http.client.NetonHttpClient
-import neton.http.client.NetonHttpMethod
-import neton.http.client.NetonHttpRequest
+import neton.http.client.HttpClientBody
+import neton.http.client.HttpClient
+import neton.http.client.HttpClientMethod
+import neton.http.client.HttpClientRequest
 
 /**
  * 支付平台实现的公共骨架。
@@ -77,14 +77,14 @@ abstract class AbstractPayPlatform : PayPlatform {
      * 调用点多在对账与回调路径上，单笔失败不该中断整批，由上层决定重试还是跳过。
      */
     protected suspend fun postJson(
-        http: NetonHttpClient,
+        http: HttpClient,
         url: String,
-        body: NetonHttpBody,
+        body: HttpClientBody,
         headers: Map<String, String> = emptyMap(),
-        method: NetonHttpMethod = NetonHttpMethod.Post,
+        method: HttpClientMethod = HttpClientMethod.Post,
     ): JsonObject? = try {
         val resp = http.request(
-            NetonHttpRequest(method = method, url = url, headers = HttpHeaders.from(headers), body = body)
+            HttpClientRequest(method = method, url = url, headers = HttpHeaders.from(headers), body = body)
         )
         if (resp.statusCode !in 200..299) null
         else json.parseToJsonElement(resp.body).jsonObject

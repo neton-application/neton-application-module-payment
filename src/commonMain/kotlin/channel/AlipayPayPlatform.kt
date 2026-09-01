@@ -8,8 +8,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import model.PayChannel
 import model.PayOrder
-import neton.http.client.NetonHttpBody
-import neton.http.client.NetonHttpClient
+import neton.http.client.HttpClientBody
+import neton.http.client.HttpClient
 import neton.http.client.create
 import neton.security.crypto.RsaSha256
 import kotlin.time.Clock
@@ -34,7 +34,7 @@ import kotlin.time.ExperimentalTime
  */
 @OptIn(ExperimentalTime::class)
 class AlipayPayPlatform(
-    private val http: NetonHttpClient = NetonHttpClient.create { requestMillis = 15_000 },
+    private val http: HttpClient = HttpClient.create { requestMillis = 15_000 },
     /** 支付回调地址，部署方给出（支付宝需要能公网访问到我们）。 */
     private val notifyUrlOf: (PayChannel) -> String = { "" },
     /** 支付完成后用户跳回的页面地址。 */
@@ -178,7 +178,7 @@ class AlipayPayPlatform(
         val root = postJson(
             http,
             cfg.serverUrl,
-            NetonHttpBody.Text(form, "application/x-www-form-urlencoded;charset=utf-8"),
+            HttpClientBody.Text(form, "application/x-www-form-urlencoded;charset=utf-8"),
         ) ?: return null
         val node = root[responseField] as? JsonObject ?: return null
         // 10000 是支付宝的"接口调用成功"，其余都带 sub_msg 说明原因
