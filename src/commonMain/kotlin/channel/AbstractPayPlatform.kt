@@ -1,5 +1,7 @@
 package channel
 
+import neton.core.http.HttpHeaders
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -82,7 +84,7 @@ abstract class AbstractPayPlatform : PayPlatform {
         method: NetonHttpMethod = NetonHttpMethod.Post,
     ): JsonObject? = try {
         val resp = http.request(
-            NetonHttpRequest(method = method, url = url, headers = headers, body = body)
+            NetonHttpRequest(method = method, url = url, headers = HttpHeaders.from(headers), body = body)
         )
         if (resp.statusCode !in 200..299) null
         else json.parseToJsonElement(resp.body).jsonObject
