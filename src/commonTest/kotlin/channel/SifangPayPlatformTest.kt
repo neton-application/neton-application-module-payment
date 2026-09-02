@@ -15,7 +15,7 @@ import neton.security.digest.Md5
  */
 class SifangPayPlatformTest {
 
-    private val qijiu = SifangPayPlatform(SifangPayPlatform.QIJIU)
+    private val qijiu = SifangPayPlatform(SifangPayPlatform.QIJIU, neton.http.testkit.ScriptedHttpClient())
 
     private fun channel(code: String = "qijiu_alipay_1", productId: String = "ALIPAY_WAP") = PayChannel(
         code = code,
@@ -87,7 +87,7 @@ class SifangPayPlatformTest {
     /** 一套实现服务多家平台：七九/至尊/文腾只是 platformCode 不同。 */
     @Test
     fun onePlatformClassServesManyProviders() {
-        val registry = PayPlatformRegistry.default()
+        val registry = PayPlatformRegistry.default(neton.http.testkit.ScriptedHttpClient())
         for (code in SifangPayPlatform.KNOWN_CODES) {
             assertEquals(code, registry.platform(code)?.platformCode, "未登记四方平台: $code")
             assertEquals(false, registry.platform(code)?.sandbox)

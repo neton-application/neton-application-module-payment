@@ -31,14 +31,14 @@ class PayPlatformRegistry(platforms: List<PayPlatform>) {
          * 两者可以同时登记 —— 究竟哪一类可用由 payment.mock.enabled 的互斥决定，
          * 而不是靠这里少注册一个。装配层需要自定义（如注入回调地址）时自行 bind 覆盖。
          */
-        fun default(): PayPlatformRegistry = PayPlatformRegistry(
+        fun default(http: neton.http.client.HttpClient): PayPlatformRegistry = PayPlatformRegistry(
             listOf(
                 SandboxPayPlatform(),
                 // 直连：支付宝
-                AlipayPayPlatform(),
+                AlipayPayPlatform(http),
             ) +
                 // 同一套四方协议服务多家平台，各挂各的网关与商户号
-                SifangPayPlatform.KNOWN_CODES.map { SifangPayPlatform(it) }
+                SifangPayPlatform.KNOWN_CODES.map { SifangPayPlatform(it, http) }
         )
     }
 }

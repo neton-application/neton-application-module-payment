@@ -10,7 +10,6 @@ import model.PayChannel
 import model.PayOrder
 import neton.http.client.HttpClientBody
 import neton.http.client.HttpClient
-import neton.http.client.create
 import neton.security.crypto.RsaSha256
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -34,7 +33,8 @@ import kotlin.time.ExperimentalTime
  */
 @OptIn(ExperimentalTime::class)
 class AlipayPayPlatform(
-    private val http: HttpClient = HttpClient.create { requestMillis = 15_000 },
+    /** 借用应用绑定的出站客户端；本类不创建、不关闭。 */
+    private val http: HttpClient,
     /** 支付回调地址，部署方给出（支付宝需要能公网访问到我们）。 */
     private val notifyUrlOf: (PayChannel) -> String = { "" },
     /** 支付完成后用户跳回的页面地址。 */

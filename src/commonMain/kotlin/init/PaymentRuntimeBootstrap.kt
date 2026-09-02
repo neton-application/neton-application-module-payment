@@ -33,7 +33,12 @@ object PaymentRuntimeBootstrap {
             ?.register(setting.PaymentSettingKeys.definitions)
 
         val orderLog = ctx.get(LoggerFactory::class).get("logic.pay-order")
-        val registry = ctx.getOrNull(PayPlatformRegistry::class) ?: PayPlatformRegistry.default()
+        val registry = ctx.getOrNull(PayPlatformRegistry::class) ?: PayPlatformRegistry.default(
+            ctx.getOrNull(neton.http.client.HttpClient::class) ?: error(
+                "module-payment needs an HttpClient bound in NetonContext (pay platforms). Build one in the " +
+                    "application with HttpClient.create { } and bind(HttpClient::class, it).",
+            ),
+        )
         // 总线由框架在启动最早期绑定，这里必然取得到。用 get 而不是 getOrNull：
         // 后者配上 PayOrderLogic 里的 `events?.publish(...)`，漏装配时是整条链路静默空转
         // （在线充值不自动到账，且没有任何信号），正是之前发生过的事。

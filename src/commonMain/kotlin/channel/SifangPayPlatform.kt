@@ -11,7 +11,6 @@ import model.PayChannel
 import model.PayOrder
 import neton.http.client.HttpClientBody
 import neton.http.client.HttpClient
-import neton.http.client.create
 import neton.http.client.HttpClientMethod
 import neton.http.client.HttpClientRequest
 import neton.security.digest.Md5
@@ -41,7 +40,8 @@ import kotlin.time.ExperimentalTime
 @OptIn(ExperimentalTime::class)
 class SifangPayPlatform(
     override val platformCode: String,
-    private val http: HttpClient = HttpClient.create { requestMillis = 15_000 },
+    /** 借用应用绑定的出站客户端；本类不创建、不关闭。 */
+    private val http: HttpClient,
     /** 回调地址，由部署方给出（平台需要能公网访问到我们）。 */
     private val notifyUrlOf: (PayChannel) -> String = { "" },
 ) : AbstractPayPlatform() {
