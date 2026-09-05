@@ -650,7 +650,9 @@ WITH lvl1 AS (
 ),
 lvl2 AS (
     INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-    SELECT v.name, v.permission, v.type, p.id, v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
+    SELECT v.name, v.permission, v.type,
+           (SELECT p.id FROM lvl1 p WHERE p.name = v.parent_name),
+           v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
     FROM (VALUES
         ('应用管理', 'pay:app:list', 2, '支付中心', 'app', 'pay/app/index', 'ant-design:appstore-outlined', 1, 1),
         ('支付订单', 'pay:order:list', 2, '支付中心', 'order', 'pay/order/index', 'ant-design:account-book-outlined', 2, 1),
@@ -659,12 +661,13 @@ lvl2 AS (
         ('钱包管理', '', 1, '支付中心', 'wallet', NULL, 'ant-design:wallet-outlined', 6, 1),
         ('提现订单', 'pay:withdraw:list', 2, '支付中心', 'withdraw', 'pay/withdraw/index', 'ant-design:bank-outlined', 7, 1)
     ) AS v(name, permission, type, parent_name, path, component, icon, sort, status)
-    JOIN lvl1 p ON p.name = v.parent_name
     RETURNING id, name
 ),
 lvl3 AS (
     INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-    SELECT v.name, v.permission, v.type, p.id, v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
+    SELECT v.name, v.permission, v.type,
+           (SELECT p.id FROM lvl2 p WHERE p.name = v.parent_name),
+           v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
     FROM (VALUES
         ('冻结管理', 'pay:wallet-freeze:menu', 2, '钱包管理', 'freeze', 'pay/wallet/freeze/index', NULL, 6, 1),
         ('钱包余额', 'pay:wallet:list', 2, '钱包管理', 'balance', 'pay/wallet/balance/index', '', 1, 1),
@@ -677,12 +680,13 @@ lvl3 AS (
         ('查看打款银行卡', 'pay:bank-card:reveal', 3, '提现订单', '', '', '', 6, 1),
         ('挂起/解除挂起', 'pay:withdraw:hold', 3, '提现订单', '', '', '', 7, 1)
     ) AS v(name, permission, type, parent_name, path, component, icon, sort, status)
-    JOIN lvl2 p ON p.name = v.parent_name
     RETURNING id, name
 ),
 lvl4 AS (
     INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-    SELECT v.name, v.permission, v.type, p.id, v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
+    SELECT v.name, v.permission, v.type,
+           (SELECT p.id FROM lvl3 p WHERE p.name = v.parent_name),
+           v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
     FROM (VALUES
         ('冻结查询', 'pay:wallet-freeze:list', 3, '冻结管理', NULL, NULL, NULL, 1, 1),
         ('账户冻结', 'pay:wallet-freeze:judicial', 3, '冻结管理', NULL, NULL, NULL, 3, 1),
@@ -696,7 +700,6 @@ lvl4 AS (
         ('查看银行卡', 'pay:bank-card:list', 3, '钱包余额', NULL, NULL, NULL, 7, 1),
         ('解绑银行卡', 'pay:bank-card:unbind', 3, '钱包余额', NULL, NULL, NULL, 8, 1)
     ) AS v(name, permission, type, parent_name, path, component, icon, sort, status)
-    JOIN lvl3 p ON p.name = v.parent_name
     RETURNING id, name
 ),
 inserted AS (
@@ -725,6 +728,7 @@ JOIN inserted m ON m.name IN (
 )
 WHERE r.code IN ('super_admin')
 ON CONFLICT DO NOTHING;
+
 
 
 
