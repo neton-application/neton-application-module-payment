@@ -626,17 +626,106 @@ CREATE UNIQUE INDEX idx_pay_wallets_user ON public.pay_wallets USING btree (user
 -- ─────────────────────────────────────────────────────────────
 
 -- module-payment V002: 支付中心菜单 seed (从 dev 库导出)
-SET search_path = public;
+SET search_path = public;-- ── 后台菜单 ──────────────────────────────────────────────────────────
+--
+-- 🔴 **不写死菜单 id**：id 由 system_menus 的序列在安装时分配。
+--
+-- 以前每个模块把 id 硬编码在 SQL 里，模块之间就得就编号达成一致，而唯一的
+-- 保护是 `ON CONFLICT (id) DO NOTHING`——撞号不会报错，只会**静默**丢菜单。
+-- 实测后果：gateway 和 privchat 撞了 700-704，于是「令牌管理」「定价修改」这些
+-- AI 网关的按钮被挂到了「用户管理」「群组管理」底下，而没有任何地方报错。
+--
+-- 现在父子关系在语句内部用**模块内唯一的菜单名**连接（同一模块内不允许重名），
+-- 跨模块不再共享任何编号，撞号从结构上不可能发生。
+--
+-- 加菜单：往对应层级的 VALUES 里加一行即可，不需要挑号。
+-- 改菜单：后续迁移按 permission 定位；若该 permission 在本模块内不唯一，
+--         用 name 加父节点定位。
 
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (4, '支付中心', '', 1, 0, '/pay', NULL, 'ant-design:pay-circle-outlined', 4, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (400, '应用管理', 'pay:app:list', 2, 4, 'app', 'pay/app/index', 'ant-design:appstore-outlined', 1, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (401, '支付订单', 'pay:order:list', 2, 4, 'order', 'pay/order/index', 'ant-design:account-book-outlined', 2, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (402, '退款订单', 'pay:refund:list', 2, 4, 'refund', 'pay/refund/index', 'ant-design:transaction-outlined', 3, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (403, '回调通知', 'pay:notify:list', 2, 4, 'notify', 'pay/notify/index', 'ant-design:notification-outlined', 4, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (404, '转账订单', 'pay:transfer:list', 2, 4, 'transfer', 'pay/transfer/index', 'ant-design:swap-outlined', 5, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (405, '钱包管理', '', 1, 4, 'wallet', NULL, 'ant-design:wallet-outlined', 6, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (4050, '钱包余额', 'pay:wallet:list', 2, 405, 'balance', 'pay/wallet/balance/index', '', 1, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at) VALUES (4051, '充值套餐', 'pay:wallet-recharge-package:list', 2, 405, 'recharge-package', 'pay/wallet/rechargePackage/index', '', 2, 1, 0, 0) ON CONFLICT (id) DO NOTHING;
+WITH lvl1 AS (
+    INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
+    VALUES
+        ('支付中心', '', 1, 0, '/pay', NULL, 'ant-design:pay-circle-outlined', 4, 1, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
+    RETURNING id, name
+),
+lvl2 AS (
+    INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
+    SELECT v.name, v.permission, v.type, p.id, v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
+    FROM (VALUES
+        ('应用管理', 'pay:app:list', 2, '支付中心', 'app', 'pay/app/index', 'ant-design:appstore-outlined', 1, 1),
+        ('支付订单', 'pay:order:list', 2, '支付中心', 'order', 'pay/order/index', 'ant-design:account-book-outlined', 2, 1),
+        ('退款订单', 'pay:refund:list', 2, '支付中心', 'refund', 'pay/refund/index', 'ant-design:transaction-outlined', 3, 1),
+        ('转账订单', 'pay:transfer:list', 2, '支付中心', 'transfer', 'pay/transfer/index', 'ant-design:swap-outlined', 5, 1),
+        ('钱包管理', '', 1, '支付中心', 'wallet', NULL, 'ant-design:wallet-outlined', 6, 1),
+        ('提现订单', 'pay:withdraw:list', 2, '支付中心', 'withdraw', 'pay/withdraw/index', 'ant-design:bank-outlined', 7, 1)
+    ) AS v(name, permission, type, parent_name, path, component, icon, sort, status)
+    JOIN lvl1 p ON p.name = v.parent_name
+    RETURNING id, name
+),
+lvl3 AS (
+    INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
+    SELECT v.name, v.permission, v.type, p.id, v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
+    FROM (VALUES
+        ('冻结管理', 'pay:wallet-freeze:menu', 2, '钱包管理', 'freeze', 'pay/wallet/freeze/index', NULL, 6, 1),
+        ('钱包余额', 'pay:wallet:list', 2, '钱包管理', 'balance', 'pay/wallet/balance/index', '', 1, 1),
+        ('充值套餐', 'pay:wallet-recharge-package:list', 2, '钱包管理', 'recharge-package', 'pay/wallet/rechargePackage/index', '', 2, 1),
+        ('提现详情', 'pay:withdraw:detail', 3, '提现订单', '', '', '', 1, 1),
+        ('审核通过', 'pay:withdraw:approve', 3, '提现订单', '', '', '', 2, 1),
+        ('驳回', 'pay:withdraw:reject', 3, '提现订单', '', '', '', 3, 1),
+        ('标记已打款', 'pay:withdraw:mark-paid', 3, '提现订单', '', '', '', 4, 1),
+        ('标记失败', 'pay:withdraw:mark-failed', 3, '提现订单', '', '', '', 5, 1),
+        ('查看打款银行卡', 'pay:bank-card:reveal', 3, '提现订单', '', '', '', 6, 1),
+        ('挂起/解除挂起', 'pay:withdraw:hold', 3, '提现订单', '', '', '', 7, 1)
+    ) AS v(name, permission, type, parent_name, path, component, icon, sort, status)
+    JOIN lvl2 p ON p.name = v.parent_name
+    RETURNING id, name
+),
+lvl4 AS (
+    INSERT INTO system_menus (name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
+    SELECT v.name, v.permission, v.type, p.id, v.path, v.component, v.icon, v.sort, v.status, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
+    FROM (VALUES
+        ('冻结查询', 'pay:wallet-freeze:list', 3, '冻结管理', NULL, NULL, NULL, 1, 1),
+        ('账户冻结', 'pay:wallet-freeze:judicial', 3, '冻结管理', NULL, NULL, NULL, 3, 1),
+        ('单笔冻结', 'pay:wallet-freeze:place', 3, '冻结管理', NULL, NULL, NULL, 2, 1),
+        ('解除冻结', 'pay:wallet-freeze:release', 3, '冻结管理', NULL, NULL, NULL, 4, 1),
+        ('钱包查询', 'pay:wallet:page', 3, '钱包余额', NULL, NULL, NULL, 1, 1),
+        ('钱包详情', 'pay:wallet:query', 3, '钱包余额', NULL, NULL, NULL, 2, 1),
+        ('钱包调整', 'pay:wallet:update', 3, '钱包余额', NULL, NULL, NULL, 3, 1),
+        ('财务总览', 'pay:wallet:overview', 3, '钱包余额', NULL, NULL, NULL, 4, 1),
+        ('钱包流水', 'pay:wallet-transaction:page', 3, '钱包余额', NULL, NULL, NULL, 5, 1),
+        ('查看银行卡', 'pay:bank-card:list', 3, '钱包余额', NULL, NULL, NULL, 7, 1),
+        ('解绑银行卡', 'pay:bank-card:unbind', 3, '钱包余额', NULL, NULL, NULL, 8, 1)
+    ) AS v(name, permission, type, parent_name, path, component, icon, sort, status)
+    JOIN lvl3 p ON p.name = v.parent_name
+    RETURNING id, name
+),
+inserted AS (
+        SELECT id, name FROM lvl1
+        UNION ALL SELECT id, name FROM lvl2
+        UNION ALL SELECT id, name FROM lvl3
+        UNION ALL SELECT id, name FROM lvl4
+)
+INSERT INTO system_role_menus (role_id, menu_id, created_at)
+SELECT r.id, m.id, (extract(epoch from now()) * 1000)::bigint
+FROM system_roles r
+JOIN inserted m ON m.name IN (
+        '冻结查询',
+        '冻结管理',
+        '单笔冻结',
+        '查看打款银行卡',
+        '查看银行卡',
+        '解绑银行卡',
+        '解除冻结',
+        '财务总览',
+        '账户冻结',
+        '钱包查询',
+        '钱包流水',
+        '钱包详情',
+        '钱包调整'
+)
+WHERE r.code IN ('super_admin')
+ON CONFLICT DO NOTHING;
+
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -759,40 +848,6 @@ ALTER SEQUENCE public.wallet_withdraw_audit_logs_id_seq OWNED BY public.wallet_w
 
 CREATE INDEX IF NOT EXISTS idx_wallet_withdraw_audit_order
     ON public.wallet_withdraw_audit_logs (order_id, id);
-
-
--- ─────────────────────────────────────────────────────────────
--- 原 V006__seed_withdraw_menu.sql
--- ─────────────────────────────────────────────────────────────
-
--- module-payment V006: 提现订单菜单 + 按钮权限点 seed (P4-F)
--- 复用既有「支付中心」(id=4) 作为财务中心；提现订单单页用状态筛选，操作按钮按权限点细分。
--- type: 1=目录 2=菜单 3=按钮。button 行只承载 permission（path/component 留空），便于后续给财务/客服分权。
-
--- 提现订单页面
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (406, '提现订单', 'pay:withdraw:list', 2, 4, 'withdraw', 'pay/withdraw/index', 'ant-design:bank-outlined', 7, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
-
--- 按钮权限点（parent=406）
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4060, '提现详情', 'pay:withdraw:detail', 3, 406, '', '', '', 1, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4061, '审核通过', 'pay:withdraw:approve', 3, 406, '', '', '', 2, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4062, '驳回', 'pay:withdraw:reject', 3, 406, '', '', '', 3, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4063, '标记已打款', 'pay:withdraw:mark-paid', 3, 406, '', '', '', 4, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4064, '标记失败', 'pay:withdraw:mark-failed', 3, 406, '', '', '', 5, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4065, '查看打款银行卡', 'pay:bank-card:reveal', 3, 406, '', '', '', 6, 1, 0, 0)
-ON CONFLICT (id) DO NOTHING;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -994,20 +1049,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_pay_mmno_card_dedup
 -- ─────────────────────────────────────────────────────────────
 
 -- Wallet admin button-level permission points (controller @Permission values
--- were never seeded; the 4050 page menu existed without them, so every role
--- got "Permission denied: pay:wallet:page"). Bind to roles 1/2.
-INSERT INTO system_menus (id, parent_id, name, permission, type, sort, status, created_at, updated_at) VALUES
- (40500, 4050, '钱包查询', 'pay:wallet:page', 3, 1, 1, (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint),
- (40501, 4050, '钱包详情', 'pay:wallet:query', 3, 2, 1, (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint),
- (40502, 4050, '钱包调整', 'pay:wallet:update', 3, 3, 1, (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint),
- (40503, 4050, '财务总览', 'pay:wallet:overview', 3, 4, 1, (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint),
- (40504, 4050, '钱包流水', 'pay:wallet-transaction:page', 3, 5, 1, (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO system_role_menus (role_id, menu_id)
-SELECT r.id, m.id FROM system_roles r, system_menus m
- WHERE r.id IN (1, 2) AND m.id IN (40500, 40501, 40502, 40503, 40504)
-   AND NOT EXISTS (SELECT 1 FROM system_role_menus rm WHERE rm.role_id = r.id AND rm.menu_id = m.id);
+-- were never seeded;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -1075,19 +1117,6 @@ CREATE INDEX IF NOT EXISTS idx_withdraw_on_hold
     ON wallet_withdraw_orders (status, hold_at DESC)
     WHERE status = 7;
 
--- 挂起/解除的按钮权限点（parent=406 提现订单页，沿用 V006 的 id 段）。
--- 挂起与解除同权：能挂就能解，不再细分。
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4065, '挂起/解除挂起', 'pay:withdraw:hold', 3, 406, '', '', '', 6, 1,
-        (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint)
-ON CONFLICT (id) DO NOTHING;
-
--- 内置管理员默认拥有（与 V011 同款绑定方式）。
-INSERT INTO system_role_menus (role_id, menu_id)
-SELECT r.id, m.id FROM system_roles r, system_menus m
- WHERE r.id IN (1, 2) AND m.id = 4065
-   AND NOT EXISTS (SELECT 1 FROM system_role_menus rm WHERE rm.role_id = r.id AND rm.menu_id = m.id);
-
 
 -- ─────────────────────────────────────────────────────────────
 -- 原 V014__fix_withdraw_hold_permission.sql
@@ -1106,21 +1135,6 @@ SELECT r.id, m.id FROM system_roles r, system_menus m
 -- 本迁移撤销那条误加的绑定，并把权限点重新插到空闲 id 4066。
 
 SET search_path = public;
-
--- 1) 撤销 V013 误加的授权。条件写死 (1, 4065)，不碰 V006 原有的 (2, 4065)。
-DELETE FROM system_role_menus WHERE role_id = 1 AND menu_id = 4065;
-
--- 2) 正确的挂起权限点。挂起与解除同权：能挂就能解，不再细分。
-INSERT INTO system_menus (id, name, permission, type, parent_id, path, component, icon, sort, status, created_at, updated_at)
-VALUES (4066, '挂起/解除挂起', 'pay:withdraw:hold', 3, 406, '', '', '', 7, 1,
-        (extract(epoch from now())*1000)::bigint, (extract(epoch from now())*1000)::bigint)
-ON CONFLICT (id) DO NOTHING;
-
--- 3) 绑定范围与同批提现权限点(4060..4064)一致：只给 role 2（管理员）。
-INSERT INTO system_role_menus (role_id, menu_id)
-SELECT r.id, m.id FROM system_roles r, system_menus m
- WHERE r.id = 2 AND m.id = 4066
-   AND NOT EXISTS (SELECT 1 FROM system_role_menus rm WHERE rm.role_id = r.id AND rm.menu_id = m.id);
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -1270,58 +1284,6 @@ ON CONFLICT (freeze_type, ref_type, ref_id) DO NOTHING;
 
 SET search_path = public;
 
--- 父菜单：冻结管理（挂在 4050 钱包管理下）。
-INSERT INTO system_menus (parent_id, name, permission, type, sort, status, created_at, updated_at)
-SELECT 4050, '冻结管理', 'pay:wallet-freeze:menu', 2, 6, 1,
-       (extract(epoch from now()) * 1000)::bigint,
-       (extract(epoch from now()) * 1000)::bigint
-WHERE NOT EXISTS (
-    SELECT 1 FROM system_menus WHERE permission = 'pay:wallet-freeze:menu'
-);
-
--- 按钮级权限点。parent_id 从父菜单查，同样不写死。
-WITH required(name, permission, sort) AS (
-    VALUES
-        ('冻结查询', 'pay:wallet-freeze:list',     1),
-        ('单笔冻结', 'pay:wallet-freeze:place',    2),
-        ('账户冻结', 'pay:wallet-freeze:judicial', 3),
-        ('解除冻结', 'pay:wallet-freeze:release',  4)
-)
-INSERT INTO system_menus (parent_id, name, permission, type, sort, status, created_at, updated_at)
-SELECT parent.id, required.name, required.permission, 3, required.sort, 1,
-       (extract(epoch from now()) * 1000)::bigint,
-       (extract(epoch from now()) * 1000)::bigint
-FROM required
-CROSS JOIN (SELECT id FROM system_menus WHERE permission = 'pay:wallet-freeze:menu' LIMIT 1) parent
-WHERE NOT EXISTS (
-    SELECT 1 FROM system_menus existing WHERE existing.permission = required.permission
-);
-
--- 绑定给内置管理员。按 role code 匹配，不按数字 id（角色 id 各环境不保证一致）。
-INSERT INTO system_role_menus (role_id, menu_id)
-SELECT role.id, menu.id
-FROM system_roles role
-CROSS JOIN system_menus menu
-WHERE role.code IN ('super_admin', 'admin')
-  AND menu.permission IN (
-      'pay:wallet-freeze:menu',
-      'pay:wallet-freeze:list',
-      'pay:wallet-freeze:place',
-      'pay:wallet-freeze:judicial',
-      'pay:wallet-freeze:release'
-  )
-  AND NOT EXISTS (
-      SELECT 1 FROM system_role_menus existing
-       WHERE existing.role_id = role.id AND existing.menu_id = menu.id
-  );
-
--- 把序列推到 max(id) 之上，修掉存量显式 id 留下的隐患。
--- 不做这一步的话，下一个按序列插入菜单的 migration 还会撞上 V002/V006/V011 写死的那些 id。
-SELECT setval(
-    pg_get_serial_sequence('system_menus', 'id'),
-    GREATEST((SELECT COALESCE(max(id), 1) FROM system_menus), 1)
-);
-
 
 -- ─────────────────────────────────────────────────────────────
 -- 原 V018__wallet_freeze_menu_route.sql
@@ -1338,28 +1300,6 @@ SELECT setval(
 -- 这里按 permission 定位、写幂等 UPDATE，V017 跑没跑过、跑过几次都得到同一结果。
 
 SET search_path = public;
-
-UPDATE system_menus
-   SET parent_id = 405,
-       path = 'freeze',
-       component = 'pay/wallet/freeze/index',
-       sort = 6,
-       updated_at = (extract(epoch from now()) * 1000)::bigint
- WHERE permission = 'pay:wallet-freeze:menu';
-
--- 按钮跟着父菜单走；V017 已经把它们挂在冻结管理下了，这里只兜底 parent_id
--- （万一 V017 的父菜单查询在某个环境落空）。
-UPDATE system_menus b
-   SET parent_id = m.id,
-       updated_at = (extract(epoch from now()) * 1000)::bigint
-  FROM (SELECT id FROM system_menus WHERE permission = 'pay:wallet-freeze:menu' LIMIT 1) m
- WHERE b.permission IN (
-         'pay:wallet-freeze:list',
-         'pay:wallet-freeze:place',
-         'pay:wallet-freeze:judicial',
-         'pay:wallet-freeze:release'
-       )
-   AND b.parent_id <> m.id;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -1381,32 +1321,6 @@ UPDATE system_menus b
 
 SET search_path = public;
 
-INSERT INTO system_menus (parent_id, name, permission, type, sort, status, created_at, updated_at)
-SELECT 4050, '查看银行卡', 'pay:bank-card:list', 3, 7, 1,
-       (extract(epoch from now()) * 1000)::bigint,
-       (extract(epoch from now()) * 1000)::bigint
-WHERE NOT EXISTS (
-    SELECT 1 FROM system_menus WHERE permission = 'pay:bank-card:list'
-);
-
--- 绑定给内置管理员。reveal 一并兜底：V006 只 seed 了菜单行，没建角色绑定，
--- 于是「查看打款银行卡」这个权限点在新环境里谁都没有。
-INSERT INTO system_role_menus (role_id, menu_id)
-SELECT role.id, menu.id
-FROM system_roles role
-CROSS JOIN system_menus menu
-WHERE role.code IN ('super_admin', 'admin')
-  AND menu.permission IN ('pay:bank-card:list', 'pay:bank-card:reveal')
-  AND NOT EXISTS (
-      SELECT 1 FROM system_role_menus existing
-       WHERE existing.role_id = role.id AND existing.menu_id = menu.id
-  );
-
-SELECT setval(
-    pg_get_serial_sequence('system_menus', 'id'),
-    GREATEST((SELECT COALESCE(max(id), 1) FROM system_menus), 1)
-);
-
 
 -- ─────────────────────────────────────────────────────────────
 -- 原 V020__bank_card_unbind_permission.sql
@@ -1424,30 +1338,6 @@ SELECT setval(
 -- id 交给序列（见 V017/V019），幂等键用 permission。
 
 SET search_path = public;
-
-INSERT INTO system_menus (parent_id, name, permission, type, sort, status, created_at, updated_at)
-SELECT 4050, '解绑银行卡', 'pay:bank-card:unbind', 3, 8, 1,
-       (extract(epoch from now()) * 1000)::bigint,
-       (extract(epoch from now()) * 1000)::bigint
-WHERE NOT EXISTS (
-    SELECT 1 FROM system_menus WHERE permission = 'pay:bank-card:unbind'
-);
-
-INSERT INTO system_role_menus (role_id, menu_id)
-SELECT role.id, menu.id
-FROM system_roles role
-CROSS JOIN system_menus menu
-WHERE role.code IN ('super_admin', 'admin')
-  AND menu.permission = 'pay:bank-card:unbind'
-  AND NOT EXISTS (
-      SELECT 1 FROM system_role_menus existing
-       WHERE existing.role_id = role.id AND existing.menu_id = menu.id
-  );
-
-SELECT setval(
-    pg_get_serial_sequence('system_menus', 'id'),
-    GREATEST((SELECT COALESCE(max(id), 1) FROM system_menus), 1)
-);
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -1535,7 +1425,3 @@ WHERE NOT EXISTS (SELECT 1 FROM pay_channels c WHERE c.code = v.code);
 -- 而不是复活一套没跑过的代码。
 
 DROP TABLE IF EXISTS pay_notify_tasks;
-
--- 后台菜单同步移除（V002 里插的那行）
-DELETE FROM system_role_menus WHERE menu_id = 403;
-DELETE FROM system_menus WHERE id = 403;
