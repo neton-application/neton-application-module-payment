@@ -1,5 +1,6 @@
 package controller.app.notify
 
+import channel.PAY_NOTIFY_ROUTE
 import channel.PlatformNotifyRequest
 import logic.PayOrderLogic
 import neton.core.annotations.AllowAnonymous
@@ -14,9 +15,15 @@ import setting.currentValue
 /**
  * 支付渠道异步回调入口。第三方支付服务器回调（无用户会话）→ 匿名；
  * 由渠道 client 验签，验签失败拒绝。
+ *
+ * 基础路径取自 [PAY_NOTIFY_ROUTE] 而不是就地写字面量：下单时发给渠道的 notify_url
+ * 由 [channel.payNotifyUrlOf] 从同一个常量拼出来。两边各写一份字符串的话，
+ * 改路由不会有任何编译错误，只会在生产上表现为「用户付了钱、订单一直待支付」
+ * —— 渠道打过来 404，重试几次就放弃，而对账任务（[job.PAY_RECONCILE_JOB_ID]）
+ * 十来分钟才查一次单，且刚下单 2 分钟内的会被跳过。
  */
 @AllowAnonymous
-@Controller("/pay/channel-notify")
+@Controller(PAY_NOTIFY_ROUTE)
 class PayChannelNotifyController(private val payOrderLogic: PayOrderLogic) {
 
     /**
