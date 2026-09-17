@@ -34,7 +34,7 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
      * 而钱包表本身答不出这个问题（账户冻结没有金额，不进 freeze_price）。
      */
     @Get("/page")
-    @Permission("pay:wallet:page")
+    @Permission("pay:wallet:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,
@@ -97,6 +97,6 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
 
     /** 财务总览轻量版（P1）：钱包资金聚合 + 提现分状态聚合。 */
     @Get("/overview")
-    @Permission("pay:wallet:overview")
+    @Permission("pay:wallet:query")
     suspend fun overview(): WalletOverviewVO = payWalletLogic.getFinanceOverview()
 }

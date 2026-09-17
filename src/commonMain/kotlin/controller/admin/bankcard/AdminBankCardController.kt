@@ -27,7 +27,7 @@ class AdminBankCardController(private val logic: UserBankCardLogic) {
      * 都能拿到完整卡号——那是 P4-B1 特意避开的。
      */
     @Get("/user/{userId}")
-    @Permission("pay:bank-card:list")
+    @Permission("pay:bank-card:query")
     suspend fun listByUser(@PathVariable userId: Long): List<BankCardView> =
         logic.listMyBankCards(userId)
 

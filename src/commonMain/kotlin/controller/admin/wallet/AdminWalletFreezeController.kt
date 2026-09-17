@@ -30,7 +30,7 @@ class AdminWalletFreezeController(private val logic: WalletFreezeLogic) {
 
     /** 冻结分页（用户/类型/状态筛选）。 */
     @Get("/page")
-    @Permission("pay:wallet-freeze:list")
+    @Permission("pay:wallet-freeze:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

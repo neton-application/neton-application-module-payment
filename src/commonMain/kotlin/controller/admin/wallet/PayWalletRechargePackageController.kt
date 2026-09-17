@@ -37,7 +37,7 @@ class PayWalletRechargePackageController(
     suspend fun get(@PathVariable id: Long) = packageLogic.getById(id)
 
     @Get("/page")
-    @Permission("pay:wallet-recharge-package:page")
+    @Permission("pay:wallet-recharge-package:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

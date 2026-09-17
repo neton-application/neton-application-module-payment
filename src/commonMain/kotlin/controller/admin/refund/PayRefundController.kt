@@ -25,7 +25,7 @@ class PayRefundController(
     }
 
     @Get("/page")
-    @Permission("pay:refund:page")
+    @Permission("pay:refund:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

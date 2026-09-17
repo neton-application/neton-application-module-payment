@@ -39,7 +39,7 @@ class PayChannelController(
     suspend fun getEnableCodeList() = channelLogic.getEnableCodeList()
 
     @Get("/page")
-    @Permission("pay:channel:page")
+    @Permission("pay:channel:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

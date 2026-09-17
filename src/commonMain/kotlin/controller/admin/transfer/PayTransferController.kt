@@ -20,7 +20,7 @@ class PayTransferController {
     }
 
     @Get("/page")
-    @Permission("pay:transfer:page")
+    @Permission("pay:transfer:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

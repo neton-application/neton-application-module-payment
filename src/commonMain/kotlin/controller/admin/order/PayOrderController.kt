@@ -43,7 +43,7 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
     }
 
     @Get("/page")
-    @Permission("pay:order:page")
+    @Permission("pay:order:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,

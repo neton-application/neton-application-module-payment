@@ -30,7 +30,7 @@ class AdminWithdrawController(private val logic: WalletWithdrawLogic) {
 
     /** 提现订单分页（状态/用户筛选）。 */
     @Get("/page")
-    @Permission("pay:withdraw:list")
+    @Permission("pay:withdraw:query")
     suspend fun page(
         @Query pageNo: Int = 1,
         @Query pageSize: Int = 20,
@@ -39,7 +39,7 @@ class AdminWithdrawController(private val logic: WalletWithdrawLogic) {
     ) = logic.pageWithdrawOrders(pageNo, pageSize, status, userId)
 
     @Get("/detail/{id}")
-    @Permission("pay:withdraw:detail")
+    @Permission("pay:withdraw:query")
     suspend fun detail(@PathVariable id: Long): WalletWithdrawOrder? = logic.getDetail(id)
 
     /** 审核通过（PENDING→APPROVED）。 */
