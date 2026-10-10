@@ -15,4 +15,4 @@ includeBuild("../neton")
 
 // 会员模块（canonical）
 includeBuild("../../Neton/neton-application-module-system")
-includeBuild("../../Neton/neton-application-module-member")
+includeBuild("../../Neton/neton-application-module-account")

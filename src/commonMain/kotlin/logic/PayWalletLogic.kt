@@ -374,12 +374,12 @@ class PayWalletLogic(
         mobile: String?,
     ): List<Long>? {
         if (username.isNullOrBlank() && nickname.isNullOrBlank() && mobile.isNullOrBlank()) return null
-        return table.MemberTable.query {
+        return table.AccountTable.query {
             where {
                 and(
-                    whenNotBlank(nickname) { model.Member::nickname like "%$it%" },
-                    whenNotBlank(mobile) { model.Member::mobile like "%$it%" },
-                    whenNotBlank(username) { model.Member::username like "%$it%" },
+                    whenNotBlank(nickname) { model.Account::nickname like "%$it%" },
+                    whenNotBlank(mobile) { model.Account::mobile like "%$it%" },
+                    whenNotBlank(username) { model.Account::username like "%$it%" },
                 )
             }
         }.list().map { m -> m.id }
