@@ -55,10 +55,10 @@ class MoneyTransferLogic(
         remark: String?,
     ): MoneyTransferSendResult {
         val order = db.transaction {
-        requireParam(amount > 0) { "amount must be positive: $amount" }
-        requireParam(fromUserId != toUserId) { "cannot transfer to self" }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
+        requireParam(fromUserId != toUserId, PaymentErrorCodes.TRANSFER_TO_SELF)
         val fromWallet = wallet.getWalletByUserId(fromUserId)
-            ?: walletNotFound("wallet not found for user $fromUserId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
 
         val order = MoneyTransferOrderTable.insert(
             MoneyTransferOrder(

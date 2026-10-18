@@ -136,12 +136,12 @@ class RedPacketLogic(
         greeting: String?,
     ): RedPacketSendResult {
         val order = db.transaction {
-        requireParam(totalAmount > 0) { "totalAmount must be positive: $totalAmount" }
-        requireParam(totalCount in 1..1000) { "totalCount out of range: $totalCount" }
-        requireParam(totalAmount >= totalCount) { "totalAmount must cover 1 fen per share" }
-        requireParam(type == TYPE_NORMAL || type == TYPE_LUCKY) { "red packet type must be 0 (normal) or 1 (lucky): $type" }
+        requireParam(totalAmount > 0, PaymentErrorCodes.AMOUNT_INVALID, "totalAmount")
+        requireParam(totalCount in 1..1000, PaymentErrorCodes.RED_PACKET_COUNT_INVALID, "totalCount")
+        requireParam(totalAmount >= totalCount, PaymentErrorCodes.RED_PACKET_AMOUNT_BELOW_COUNT, "totalAmount")
+        requireParam(type == TYPE_NORMAL || type == TYPE_LUCKY, PaymentErrorCodes.RED_PACKET_TYPE_INVALID, "type")
         val senderWallet = wallet.getWalletByUserId(senderUserId)
-            ?: walletNotFound("wallet not found for user $senderUserId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
 
         val ts = now()
         val order = RedPacketOrderTable.insert(
@@ -205,7 +205,7 @@ class RedPacketLogic(
         // provider 未装配(非 IM 部署)→ 放行。授权失败 → 403(不落 500)。
         run {
             val order = RedPacketOrderTable.get(redPacketId)
-                ?: walletNotFound("red packet not found: $redPacketId")
+                ?: walletNotFound(PaymentErrorCodes.RED_PACKET_NOT_FOUND)
             MoneyAuthorization.requireCanClaimRedPacket(userId, order.channelId, order.scene, order.senderUserId)
         }
         var attempt = 0
@@ -215,7 +215,7 @@ class RedPacketLogic(
             } catch (e: OptimisticClaimConflict) {
                 if (++attempt >= MAX_CLAIM_RETRY) {
                     log.warn("red_packet.claim.conflict_exhausted", mapOf("id" to redPacketId, "attempts" to attempt))
-                    walletConflict("red packet claim conflict; please retry: $redPacketId")
+                    walletConflict(PaymentErrorCodes.RED_PACKET_CLAIM_CONFLICT)
                 }
             }
         }
@@ -227,21 +227,21 @@ class RedPacketLogic(
      */
     private suspend fun claimOnce(redPacketId: Long, userId: Long): RedPacketClaim = db.transaction {
         val order = RedPacketOrderTable.get(redPacketId)
-            ?: walletNotFound("red packet not found: $redPacketId")
+            ?: walletNotFound(PaymentErrorCodes.RED_PACKET_NOT_FOUND)
 
         // 惰性过期结算：过期且仍 ACTIVE → 退款并拒领。
         if (order.status == STATUS_ACTIVE && now() > order.expireAt) {
             refundExpiredInTx(order)
-            walletConflict("red packet expired: $redPacketId")
+            walletConflict(PaymentErrorCodes.RED_PACKET_EXPIRED)
         }
-        requireState(order.status == STATUS_ACTIVE) { "red packet not claimable (status=${order.status})" }
-        requireState(order.remainingCount > 0) { "red packet drained: $redPacketId" }
+        requireState(order.status == STATUS_ACTIVE, PaymentErrorCodes.RED_PACKET_NOT_CLAIMABLE)
+        requireState(order.remainingCount > 0, PaymentErrorCodes.RED_PACKET_DRAINED)
 
         // 防重复领取：快路径预检（唯一键为并发硬兜底）。
         val existed = RedPacketClaimTable.oneWhere {
             and(RedPacketClaim::redPacketId eq redPacketId, RedPacketClaim::userId eq userId)
         }
-        if (existed != null) walletConflict("already claimed: $redPacketId")
+        if (existed != null) walletConflict(PaymentErrorCodes.RED_PACKET_ALREADY_CLAIMED)
 
         // 分配金额（金额由观测快照算出，与下面乐观锁 remaining_count 守卫同快照 → 并发下要么整体成功要么冲突重试，
         // 绝不基于陈旧快照落库，因此不会超领/负剩余）。最后一份一律拿走余额，保证 Σ=total。
@@ -320,7 +320,7 @@ class RedPacketLogic(
     /** 过期退款（惰性触发 or 定时扫描）：抢占 ACTIVE→REFUNDING，退剩余给发送方(402)，置 EXPIRED。幂等。 */
     suspend fun expireRefund(redPacketId: Long): Boolean = db.transaction {
         val order = RedPacketOrderTable.get(redPacketId)
-            ?: walletNotFound("red packet not found: $redPacketId")
+            ?: walletNotFound(PaymentErrorCodes.RED_PACKET_NOT_FOUND)
         if (order.status != STATUS_ACTIVE) return@transaction false
         refundExpiredInTx(order)
     }

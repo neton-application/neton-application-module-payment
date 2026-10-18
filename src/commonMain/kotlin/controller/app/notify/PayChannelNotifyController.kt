@@ -9,6 +9,7 @@ import neton.core.annotations.Controller
 import neton.core.annotations.PathVariable
 import neton.core.annotations.Post
 import neton.core.http.NotFoundException
+import logic.PaymentErrorCodes
 import setting.PaymentSettingKeys
 import setting.currentValue
 
@@ -54,7 +55,7 @@ class PayChannelNotifyController(private val payOrderLogic: PayOrderLogic) {
         @PathVariable channelCode: String,
         @Body params: Map<String, String>
     ): Boolean {
-        if (!PaymentSettingKeys.MOCK_PAY_ENABLED.currentValue()) throw NotFoundException("Not found")
+        if (!PaymentSettingKeys.MOCK_PAY_ENABLED.currentValue()) throw NotFoundException(PaymentErrorCodes.MOCK_PAY_DISABLED)
         return payOrderLogic.handleChannelNotify(
             channelCode,
             PlatformNotifyRequest(params = params + ("status" to "success")),

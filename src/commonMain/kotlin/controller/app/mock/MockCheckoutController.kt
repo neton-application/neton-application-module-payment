@@ -8,6 +8,7 @@ import neton.core.annotations.Get
 import neton.core.annotations.Query
 import neton.core.http.HttpResponse
 import neton.core.http.NotFoundException
+import logic.PaymentErrorCodes
 import setting.PaymentSettingKeys
 import setting.currentValue
 
@@ -66,7 +67,7 @@ class MockCheckoutController(private val payOrderLogic: PayOrderLogic) {
     }
 
     private suspend fun requireEnabled() {
-        if (!PaymentSettingKeys.MOCK_PAY_ENABLED.currentValue()) throw NotFoundException("Not found")
+        if (!PaymentSettingKeys.MOCK_PAY_ENABLED.currentValue()) throw NotFoundException(PaymentErrorCodes.MOCK_PAY_DISABLED)
     }
 
     private fun checkoutPage(merchantOrderId: String, channelCode: String): String = """

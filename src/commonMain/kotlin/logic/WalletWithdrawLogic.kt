@@ -38,9 +38,9 @@ class WalletWithdrawLogic(
         currency: String = "CNY",
     ): WalletWithdrawOrder {
         val userId = op.operatorId
-        requireParam(amount > 0) { "amount must be positive: $amount" }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
         val wallet = payWallet.getWalletByUserId(userId)
-            ?: walletNotFound("wallet not found for user $userId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         // 银行卡必须属于本人且有效。
         UserBankCardTable.oneWhere {
             and(
@@ -48,7 +48,7 @@ class WalletWithdrawLogic(
                 UserBankCard::userId eq userId,
                 UserBankCard::deletedAt eq 0L,
             )
-        } ?: walletNotFound("bank card not found or not yours: $bankCardId")
+        } ?: walletNotFound(PaymentErrorCodes.BANK_CARD_NOT_FOUND)
 
         val fee = 0L
         return db.transaction {
@@ -76,7 +76,7 @@ class WalletWithdrawLogic(
     suspend fun cancel(op: OperatorContext, orderId: Long): WalletWithdrawOrder = db.transaction {
         val userId = op.operatorId
         val order = requireOrder(orderId)
-        if (order.userId != userId) walletNotFound("not your order: $orderId")
+        if (order.userId != userId) walletNotFound(PaymentErrorCodes.WITHDRAW_ORDER_NOT_FOUND)
         SM.ensureCanCancel(order.status)
         transit(orderId, order.status, SM.CANCELLED) { }
         payWallet.unfreezeInTx(order.walletId, order.amount, order.id, "withdraw unfreeze (cancel) #${order.id}")
@@ -156,7 +156,7 @@ class WalletWithdrawLogic(
         SM.ensureCanHold(order.status)
         // 空文案等于挂起后用户只看到「已挂起」三个字，不知道该干什么。
         val text = reasonText.trim()
-        require(text.isNotEmpty()) { "挂起原因不能为空" }
+        requireParam(text.isNotEmpty(), PaymentErrorCodes.WITHDRAW_HOLD_REASON_REQUIRED, "reasonText")
         val resumeTo = order.status
         transit(orderId, order.status, SM.ON_HOLD) {
             set(WalletWithdrawOrder::holdResumeTo, resumeTo)
@@ -232,7 +232,7 @@ class WalletWithdrawLogic(
 
     private suspend fun requireOrder(orderId: Long): WalletWithdrawOrder =
         WalletWithdrawOrderTable.get(orderId)
-            ?: walletNotFound("withdraw order not found: $orderId")
+            ?: walletNotFound(PaymentErrorCodes.WITHDRAW_ORDER_NOT_FOUND)
 
     /** 乐观锁状态流转：仅当当前 status==expected 才更新；否则抛并发冲突。 */
     private suspend fun transit(
@@ -253,7 +253,7 @@ class WalletWithdrawLogic(
             extra()
         }
         if (updated == 0L) {
-            walletConflict("withdraw order $orderId state changed concurrently; please retry")
+            walletConflict(PaymentErrorCodes.WITHDRAW_CONCURRENT_MODIFIED)
         }
     }
 

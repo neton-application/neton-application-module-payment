@@ -66,9 +66,15 @@ class BankCardBindValidationTest {
             cardNo = cardNo,
         )
 
-    private suspend fun assertRejected(cardNo: String, hint: String) {
+    private suspend fun assertRejected(
+        cardNo: String,
+        hint: String,
+        expected: String = PaymentErrorCodes.BANK_CARD_NUMBER_INVALID,
+    ) {
         val e = assertFailsWith<HttpException>(hint) { bind(cardNo) }
         assertEquals(NetonErrorCode.INVALID_PARAMS, e.code, "$hint：必须是 400 而不是 500")
+        assertEquals(expected, e.message, hint)
+        assertEquals(listOf("cardNo"), e.errors.map { it.path }, hint)
     }
 
     /** 越过校验 = 走到了加密阶段（crypto 未配置 → IllegalStateException）。 */
@@ -109,6 +115,6 @@ class BankCardBindValidationTest {
 
     @Test
     fun `blank card number is rejected with 400`() = runBlocking {
-        assertRejected("   ", "全空白")
+        assertRejected("   ", "全空白", PaymentErrorCodes.BANK_CARD_NUMBER_REQUIRED)
     }
 }

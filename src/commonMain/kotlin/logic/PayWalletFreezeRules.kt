@@ -20,29 +20,21 @@ object PayWalletFreezeRules {
     // 可用/冻结/余额不足→409(requireState，属"当前账户状态不足")。
     /** 创建提现/冻结前校验：金额为正且可用余额充足。 */
     fun ensureCanFreeze(balance: Long, freezePrice: Long, amount: Long) {
-        requireParam(amount > 0) { "freeze amount must be positive: $amount" }
-        requireState(available(balance, freezePrice) >= amount) {
-            "insufficient available balance: available=${available(balance, freezePrice)}, need=$amount"
-        }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
+        requireState(available(balance, freezePrice) >= amount, PaymentErrorCodes.WALLET_AVAILABLE_BALANCE_INSUFFICIENT)
     }
 
     /** 解冻前校验：金额为正且冻结额充足。 */
     fun ensureCanUnfreeze(freezePrice: Long, amount: Long) {
-        requireParam(amount > 0) { "unfreeze amount must be positive: $amount" }
-        requireState(freezePrice >= amount) {
-            "insufficient frozen amount: frozen=$freezePrice, need=$amount"
-        }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
+        requireState(freezePrice >= amount, PaymentErrorCodes.WALLET_FROZEN_AMOUNT_INSUFFICIENT)
     }
 
     /** 从冻结实扣（打款成功）前校验：金额为正，冻结额与余额都充足。 */
     fun ensureCanDeductFrozen(balance: Long, freezePrice: Long, amount: Long) {
-        requireParam(amount > 0) { "deduct amount must be positive: $amount" }
-        requireState(freezePrice >= amount) {
-            "deduct exceeds frozen amount: frozen=$freezePrice, need=$amount"
-        }
-        requireState(balance >= amount) {
-            "deduct exceeds balance: balance=$balance, need=$amount"
-        }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
+        requireState(freezePrice >= amount, PaymentErrorCodes.WALLET_FROZEN_AMOUNT_INSUFFICIENT)
+        requireState(balance >= amount, PaymentErrorCodes.WALLET_BALANCE_INSUFFICIENT)
     }
 
     /**

@@ -3,6 +3,7 @@ package smoke
 import kotlinx.coroutines.runBlocking
 import logic.OperatorContext
 import logic.PayWalletLogic
+import logic.PaymentErrorCodes
 import logic.WalletFreezeLogic
 import logic.WalletFreezeStatus
 import model.PayWallet
@@ -91,9 +92,10 @@ class WalletFreezeDbSmokeTest {
             assertEquals(12_000L, afterCredit.freezePrice, "入账必须被司法冻结吸收，可用余额仍为 0")
 
             // 可用为 0 时任何借记都必须被挡住。
-            assertFailsWith<IllegalArgumentException> {
+            val debit = assertFailsWith<HttpException> {
                 payWallet.updateBalance(wallet.id, -1, PayWalletLogic.BIZ_TYPE_ADMIN_ADJUST, 0, "smoke 借记")
             }
+            assertEquals(PaymentErrorCodes.WALLET_AVAILABLE_BALANCE_INSUFFICIENT, debit.message)
 
             // ---- 4. 解除司法冻结：只退回它自己吸收的那部分 ----
             freezes.release(op, judicial.id)

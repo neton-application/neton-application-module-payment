@@ -1,5 +1,7 @@
 package logic
 
+import neton.core.http.HttpException
+import neton.core.http.NetonErrorCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,9 +13,10 @@ class PayWalletRechargeStateMachineTest {
     fun `mark refunded requires refund request first`() {
         val recharge = paidRecharge(refundStatus = PayWalletRechargeStateMachine.REFUND_STATUS_NONE)
 
-        assertFailsWith<IllegalArgumentException> {
+        val error = assertFailsWith<HttpException> {
             PayWalletRechargeStateMachine.ensureCanMarkRefunded(recharge)
         }
+        assertEquals(PaymentErrorCodes.WALLET_RECHARGE_REFUND_NOT_REQUESTED, error.message)
     }
 
     @Test
@@ -23,9 +26,10 @@ class PayWalletRechargeStateMachineTest {
             refundStatus = PayWalletRechargeStateMachine.REFUND_STATUS_NONE
         )
 
-        assertFailsWith<IllegalArgumentException> {
+        val error = assertFailsWith<HttpException> {
             PayWalletRechargeStateMachine.ensureCanRequestRefund(recharge)
         }
+        assertEquals(PaymentErrorCodes.WALLET_RECHARGE_NOT_PAID, error.message)
     }
 
     @Test
@@ -35,9 +39,10 @@ class PayWalletRechargeStateMachineTest {
             refundStatus = PayWalletRechargeStateMachine.REFUND_STATUS_REQUESTED
         )
 
-        assertFailsWith<IllegalArgumentException> {
+        val error = assertFailsWith<HttpException> {
             PayWalletRechargeStateMachine.ensureCanMarkPaid(recharge)
         }
+        assertEquals(PaymentErrorCodes.WALLET_RECHARGE_REFUND_IN_PROGRESS, error.message)
     }
 
     @Test
@@ -51,11 +56,12 @@ class PayWalletRechargeStateMachineTest {
     fun `duplicate refund request is rejected`() {
         val recharge = paidRecharge(refundStatus = PayWalletRechargeStateMachine.REFUND_STATUS_REQUESTED)
 
-        val error = assertFailsWith<IllegalArgumentException> {
+        val error = assertFailsWith<HttpException> {
             PayWalletRechargeStateMachine.ensureCanRequestRefund(recharge)
         }
 
-        assertEquals("Recharge refund already requested: 1", error.message)
+        assertEquals(NetonErrorCode.OPERATION_CONFLICT, error.code)
+        assertEquals(PaymentErrorCodes.WALLET_RECHARGE_REFUND_ALREADY_REQUESTED, error.message)
     }
 
     @Test

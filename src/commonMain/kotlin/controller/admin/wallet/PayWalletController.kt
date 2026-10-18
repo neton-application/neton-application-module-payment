@@ -18,6 +18,8 @@ import neton.core.annotations.Body
 import neton.core.annotations.Query
 import neton.core.http.BadRequestException
 import neton.core.http.HttpContext
+import logic.PaymentErrorCodes
+import neton.core.http.ValidationError
 import neton.core.interfaces.Identity
 
 @Controller("/pay/wallet")
@@ -77,7 +79,10 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
     @Permission("pay:wallet:update")
     suspend fun manualRecharge(identity: Identity, ctx: HttpContext, @Body req: ManualRechargeRequest) {
         val remark = req.remark.trim()
-        if (remark.isEmpty()) throw BadRequestException("充值备注必填")
+        if (remark.isEmpty()) throw BadRequestException(
+            PaymentErrorCodes.REMARK_REQUIRED,
+            listOf(ValidationError("remark", PaymentErrorCodes.REMARK_REQUIRED, PaymentErrorCodes.REMARK_REQUIRED)),
+        )
         payWalletLogic.manualRecharge(OperatorContext.from(identity, ctx), req.userId, req.amount, remark)
     }
 
@@ -91,7 +96,10 @@ class PayWalletController(private val payWalletLogic: PayWalletLogic) {
     @Permission("pay:wallet:update")
     suspend fun manualDeduct(identity: Identity, ctx: HttpContext, @Body req: ManualDeductRequest) {
         val remark = req.remark.trim()
-        if (remark.isEmpty()) throw BadRequestException("划扣备注必填")
+        if (remark.isEmpty()) throw BadRequestException(
+            PaymentErrorCodes.REMARK_REQUIRED,
+            listOf(ValidationError("remark", PaymentErrorCodes.REMARK_REQUIRED, PaymentErrorCodes.REMARK_REQUIRED)),
+        )
         payWalletLogic.manualDeduct(OperatorContext.from(identity, ctx), req.userId, req.amount, remark)
     }
 

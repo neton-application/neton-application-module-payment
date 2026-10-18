@@ -119,7 +119,7 @@ class WalletFreezeLogic(
      * 可用余额是错的，而普通消费路径（红包/转账）读的正是这个缓存。
      */
     suspend fun recomputeFreezePriceInTx(walletId: Long): Long {
-        val wallet = PayWalletTable.get(walletId) ?: walletNotFound("Wallet not found: $walletId")
+        val wallet = PayWalletTable.get(walletId) ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         val s = summarize(activeFreezes(walletId))
         val cache = WalletFreezeModel.freezePriceCache(wallet.balance, s.amountHolds, s.judicial)
         if (cache != wallet.freezePrice) {
@@ -166,9 +166,7 @@ class WalletFreezeLogic(
      * 幂等：已经是终态时直接返回 false。
      */
     suspend fun finishInTx(freezeId: Long, terminalStatus: Int): Boolean {
-        requireParam(terminalStatus != WalletFreezeStatus.ACTIVE) {
-            "terminal status must not be ACTIVE"
-        }
+        requireParam(terminalStatus != WalletFreezeStatus.ACTIVE, PaymentErrorCodes.WALLET_FREEZE_STATUS_INVALID)
         val freeze = PayWalletFreezeTable.get(freezeId) ?: return false
         if (freeze.status != WalletFreezeStatus.ACTIVE) return false
         val now = nowMillis()
@@ -280,14 +278,12 @@ class WalletFreezeLogic(
     ): PayWalletFreeze = db.transaction {
         val effectiveRefId = refId?.trim()?.takeIf { it.isNotEmpty() } ?: autoRef(userId, op)
         val wallet = PayWalletTable.oneWhere { PayWallet::userId eq userId }
-            ?: walletNotFound("Wallet not found for user: $userId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         val summary = summarize(activeFreezes(wallet.id))
         requireState(
-            WalletFreezeModel.canPlaceAmountHold(wallet.balance, summary.amountHolds, summary.judicial, amount)
-        ) {
-            val available = WalletFreezeModel.available(wallet.balance, summary.amountHolds, summary.judicial)
-            "insufficient available balance to hold: available=$available, need=$amount"
-        }
+            WalletFreezeModel.canPlaceAmountHold(wallet.balance, summary.amountHolds, summary.judicial, amount),
+            PaymentErrorCodes.WALLET_AVAILABLE_BALANCE_INSUFFICIENT,
+        )
         placeInTx(
             PayWalletFreeze(
                 walletId = wallet.id,
@@ -321,14 +317,10 @@ class WalletFreezeLogic(
     ): PayWalletFreeze = db.transaction {
         // 文书号可留空：紧急处置往往先冻结、文书后补。
         val effectiveDocNo = legalDocNo?.trim()?.takeIf { it.isNotEmpty() } ?: autoRef(userId, op)
-        requireParam(targetAmount == null || targetAmount > 0) {
-            "judicial target amount must be positive when present: $targetAmount"
-        }
+        requireParam(targetAmount == null || targetAmount > 0, PaymentErrorCodes.AMOUNT_INVALID, "targetAmount")
         val wallet = PayWalletTable.oneWhere { PayWallet::userId eq userId }
-            ?: walletNotFound("Wallet not found for user: $userId")
-        requireState(!isJudiciallyFrozen(wallet.id)) {
-            "wallet already has an active account freeze"
-        }
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
+        requireState(!isJudiciallyFrozen(wallet.id), PaymentErrorCodes.WALLET_ALREADY_FROZEN)
         placeInTx(
             PayWalletFreeze(
                 walletId = wallet.id,
@@ -348,9 +340,7 @@ class WalletFreezeLogic(
     /** 解除一条冻结（放行，钱回到可用余额）。提现冻结不走这里——那由提现状态机管。 */
     suspend fun release(op: OperatorContext, freezeId: Long): Boolean = db.transaction {
         val freeze = PayWalletFreezeTable.get(freezeId) ?: return@transaction false
-        requireState(freeze.freezeType != WalletFreezeType.WITHDRAW) {
-            "a withdrawal hold is released by the withdrawal state machine, not here"
-        }
+        requireState(freeze.freezeType != WalletFreezeType.WITHDRAW, PaymentErrorCodes.WALLET_FREEZE_WITHDRAW_HOLD)
         log.info("wallet.freeze.release", mapOf("freezeId" to freezeId, "operatorId" to op.operatorId))
         finishInTx(freezeId, WalletFreezeStatus.RELEASED)
     }

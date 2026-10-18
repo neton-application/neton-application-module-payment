@@ -23,6 +23,7 @@ import table.PayOrderTable
 import controller.admin.order.dto.PayOrderDetailVO
 import neton.core.http.BadRequestException
 import neton.core.http.NotFoundException
+import neton.core.http.ValidationError
 import neton.database.dsl.*
 import neton.database.api.DbContext
 import neton.database.dbContext
@@ -98,7 +99,7 @@ class PayOrderLogic(
     /** 下单：落 WAITING 订单 → 调渠道 client 拿支付地址，回写渠道单号。 */
     suspend fun submit(order: PayOrder): PrepayVO {
         val route = resolveRoute(order.channelCode)
-            ?: throw BadRequestException("不可用的支付通道: ${order.channelCode}")
+            ?: throw BadRequestException(PaymentErrorCodes.PAY_CHANNEL_UNAVAILABLE)
         val inserted = PayOrderTable.insert(order.copy(status = STATUS_WAITING))
         val prepay: PrepayResult = route.platform.prepay(inserted, route.channel)
         PayOrderTable.update(inserted.copy(channelOrderNo = prepay.platformOrderNo))
@@ -117,7 +118,7 @@ class PayOrderLogic(
         val result = route.platform.parseNotify(request, route.channel) ?: return false
         if (result.state != PlatformOrderState.SUCCESS) return false
         val order = PayOrderTable.oneWhere { PayOrder::merchantOrderId eq result.merchantOrderId }
-            ?: throw NotFoundException("订单不存在: ${result.merchantOrderId}")
+            ?: throw NotFoundException(PaymentErrorCodes.PAY_ORDER_NOT_FOUND)
         if (order.status == STATUS_SUCCESS) return true // 幂等
         updateSuccess(order.id, result.platformOrderNo, result.paidAt ?: return false)
         return true
@@ -314,16 +315,19 @@ class PayOrderLogic(
         if (existing != null) return existing // 幂等：同一退款单号只处理一次
 
         val order = PayOrderTable.oneWhere { PayOrder::merchantOrderId eq merchantOrderId }
-            ?: throw NotFoundException("订单不存在: $merchantOrderId")
+            ?: throw NotFoundException(PaymentErrorCodes.PAY_ORDER_NOT_FOUND)
         if (order.status != STATUS_SUCCESS) {
-            throw BadRequestException("订单未支付成功，不能退款: $merchantOrderId")
+            throw BadRequestException(PaymentErrorCodes.PAY_ORDER_NOT_PAID)
         }
         if (refundAmount <= 0 || refundAmount > order.price) {
-            throw BadRequestException("退款金额不合法: $refundAmount")
+            throw BadRequestException(
+                PaymentErrorCodes.AMOUNT_INVALID,
+                listOf(ValidationError("refundAmount", PaymentErrorCodes.AMOUNT_INVALID, PaymentErrorCodes.AMOUNT_INVALID)),
+            )
         }
 
         val route = resolveRoute(order.channelCode)
-            ?: throw BadRequestException("不可用的支付通道: ${order.channelCode}")
+            ?: throw BadRequestException(PaymentErrorCodes.PAY_CHANNEL_UNAVAILABLE)
 
         val result = route.platform.refund(
             RefundCommand(

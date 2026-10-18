@@ -5,7 +5,9 @@ import controller.admin.channel.dto.UpdatePayChannelRequest
 import dto.PageResponse
 import model.PayChannel
 import table.PayChannelTable
-import neton.core.http.BadRequestException
+import neton.core.http.ValidationError
+import neton.core.http.NetonErrorCode
+import neton.core.http.HttpException
 import neton.core.http.NotFoundException
 import neton.database.dsl.*
 
@@ -21,7 +23,11 @@ class PayChannelLogic(
         // 而 sqlx4k 的 SQLError 被兜底成 `500 Internal Server Error` —— 运营看到的是「后台坏了」，
         // 而不是「这个编码已经有了」。同一处置见 QuotaLogic.validateGrant 的注释。
         getByCode(request.code)?.let {
-            throw BadRequestException("支付渠道编码 '${request.code}' 已存在（渠道 #${it.id}）；编码是业务唯一键，请换一个")
+            throw HttpException(
+                NetonErrorCode.RESOURCE_ALREADY_EXISTS,
+                PaymentErrorCodes.PAY_CHANNEL_CODE_EXISTS,
+                listOf(ValidationError("code", PaymentErrorCodes.PAY_CHANNEL_CODE_EXISTS, PaymentErrorCodes.PAY_CHANNEL_CODE_EXISTS)),
+            )
         }
         return PayChannelTable.insert(
             PayChannel(
@@ -40,7 +46,7 @@ class PayChannelLogic(
 
     suspend fun update(request: UpdatePayChannelRequest) {
         PayChannelTable.get(request.id)
-            ?: throw NotFoundException("Pay channel not found")
+            ?: throw NotFoundException(PaymentErrorCodes.PAY_CHANNEL_NOT_FOUND)
         PayChannelTable.update(
             PayChannel(
                 id = request.id,
@@ -59,7 +65,7 @@ class PayChannelLogic(
 
     suspend fun delete(id: Long) {
         PayChannelTable.get(id)
-            ?: throw NotFoundException("Pay channel not found")
+            ?: throw NotFoundException(PaymentErrorCodes.PAY_CHANNEL_NOT_FOUND)
         PayChannelTable.destroy(id)
     }
 

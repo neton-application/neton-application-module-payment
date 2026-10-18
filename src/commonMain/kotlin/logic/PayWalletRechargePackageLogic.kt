@@ -28,7 +28,7 @@ class PayWalletRechargePackageLogic(
 
     suspend fun update(request: UpdatePayWalletRechargePackageRequest) {
         PayWalletRechargePackageTable.get(request.id)
-            ?: throw NotFoundException("Pay wallet recharge package not found")
+            ?: throw NotFoundException(PaymentErrorCodes.WALLET_RECHARGE_PACKAGE_NOT_FOUND)
         PayWalletRechargePackageTable.update(
             PayWalletRechargePackage(
                 id = request.id,
@@ -42,7 +42,7 @@ class PayWalletRechargePackageLogic(
 
     suspend fun delete(id: Long) {
         PayWalletRechargePackageTable.get(id)
-            ?: throw NotFoundException("Pay wallet recharge package not found")
+            ?: throw NotFoundException(PaymentErrorCodes.WALLET_RECHARGE_PACKAGE_NOT_FOUND)
         PayWalletRechargePackageTable.destroy(id)
     }
 

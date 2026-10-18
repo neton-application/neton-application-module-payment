@@ -3,6 +3,7 @@ package controller.app.wallet
 import controller.app.wallet.dto.CreateWalletRechargeRequest
 import logic.PayOrderLogic
 import logic.PayWalletLogic
+import logic.PaymentErrorCodes
 import logic.WalletRechargePaidListener
 import model.PayOrder
 import neton.core.annotations.Body
@@ -46,12 +47,12 @@ class PayWalletRechargeController(
         @Query channelCode: String,
     ): PayOrderLogic.PrepayVO {
         val recharge = payWalletLogic.getRecharge(rechargeId)
-            ?: throw neton.core.http.NotFoundException("充值单不存在")
+            ?: throw neton.core.http.NotFoundException(PaymentErrorCodes.WALLET_RECHARGE_NOT_FOUND)
         val wallet = payWalletLogic.getWallet(identity.id.toLong())
         if (wallet == null || recharge.walletId != wallet.id) {
-            throw neton.core.http.NotFoundException("充值单不存在")
+            throw neton.core.http.NotFoundException(PaymentErrorCodes.WALLET_RECHARGE_NOT_FOUND)
         }
-        if (recharge.payStatus != 0) throw neton.core.http.BadRequestException("该充值单已支付")
+        if (recharge.payStatus != 0) throw neton.core.http.BadRequestException(PaymentErrorCodes.WALLET_RECHARGE_ALREADY_PAID)
 
         return payOrderLogic.submit(
             PayOrder(

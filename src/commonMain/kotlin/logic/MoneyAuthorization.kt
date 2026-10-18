@@ -47,6 +47,6 @@ object MoneyAuthorization {
     ) {
         val p = provider ?: return
         val ok = p.canClaimRedPacket(userId, channelId, scene, senderUserId)
-        if (!ok) walletForbidden("not authorized to claim this red packet")
+        if (!ok) walletForbidden(PaymentErrorCodes.RED_PACKET_CLAIM_FORBIDDEN)
     }
 }

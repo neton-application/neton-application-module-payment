@@ -46,17 +46,10 @@ class PayWalletLogic(
         const val BIZ_TYPE_TRANSFER_REFUND = 502           // 转账异常回滚（biz_id=transfer_id）
     }
 
-    /** 分 → 元，只用于给人看的错误消息。 */
-    private fun yuan(fen: Long): String {
-        val abs = if (fen < 0) -fen else fen
-        val sign = if (fen < 0) "-" else ""
-        return "$sign${abs / 100}.${(abs % 100).toString().padStart(2, '0')}"
-    }
-
     private suspend fun requireWalletByUserId(userId: Long): PayWallet {
         // 404 而不是 500：查无此钱包是事实，不是故障。
         return PayWalletTable.oneWhere { PayWallet::userId eq userId }
-            ?: walletNotFound("该用户还没有钱包：userId=$userId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
     }
 
     suspend fun getWallet(userId: Long): PayWallet? {
@@ -85,7 +78,7 @@ class PayWalletLogic(
      * 备注写进 ledger title 供审计追溯。无钱包用户懒创建（与充值同语义）。
      */
     suspend fun manualRecharge(op: OperatorContext, userId: Long, amount: Long, remark: String) {
-        require(amount > 0) { "manual recharge amount must be positive" }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
         val wallet = getWalletByUserId(userId) ?: db.transaction { getOrCreateWalletInTx(userId) }
         updateBalance(wallet.id, amount, BIZ_TYPE_ADMIN_ADJUST, 0L, "手动充值：$remark")
         log.info("wallet.manual-recharge", mapOf("userId" to userId, "amount" to amount, "remark" to remark))
@@ -105,7 +98,7 @@ class PayWalletLogic(
      *    事后只能从这里看。
      */
     suspend fun manualDeduct(op: OperatorContext, userId: Long, amount: Long, remark: String) {
-        require(amount > 0) { "manual deduct amount must be positive" }
+        requireParam(amount > 0, PaymentErrorCodes.AMOUNT_INVALID, "amount")
         val wallet = requireWalletByUserId(userId)
         updateBalance(wallet.id, -amount, BIZ_TYPE_ADMIN_ADJUST, 0L, "手动划扣：$remark")
         log.warn("wallet.manual-deduct", mapOf("userId" to userId, "amount" to amount, "remark" to remark))
@@ -165,25 +158,20 @@ class PayWalletLogic(
         // 而巡检是记账用的，不该成为「钱什么时候能花」的判据。
         freezes.recomputeFreezePriceInTx(walletId)
         val wallet = PayWalletTable.get(walletId)
-            ?: walletNotFound("Wallet not found: $walletId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
 
         val newBalance = wallet.balance + price
         if (newBalance < 0) {
             // 400 而不是 500：余额不够是调用方的事实，不是服务端故障。
             // 抛 IllegalArgumentException 会被兜成 Internal Server Error，
             // 既污染错误率、又让后台只看到「服务器内部错误」而不知道是钱不够。
-            walletBadRequest(
-                "余额不足：当前 ${yuan(wallet.balance)} 元，本次需扣 ${yuan(-price)} 元"
-            )
+            walletBadRequest(PaymentErrorCodes.WALLET_BALANCE_INSUFFICIENT)
         }
         // 普通借记不得侵占被冻结资金（R2：可用余额 = balance − freezePrice）。
         // freezePrice 默认 0 时此判定退化为无影响，对存量消费路径向后兼容。
         // 提现实扣走 deductFrozen（同时减 balance 与 freezePrice），不经此路径。
         if (price < 0 && !PayWalletFreezeRules.debitKeepsFrozenSafe(newBalance, wallet.freezePrice)) {
-            walletBadRequest(
-                "可用余额不足：余额 ${yuan(wallet.balance)} 元中有 ${yuan(wallet.freezePrice)} 元被冻结，" +
-                    "本次需扣 ${yuan(-price)} 元"
-            )
+            walletBadRequest(PaymentErrorCodes.WALLET_AVAILABLE_BALANCE_INSUFFICIENT)
         }
 
         // Update wallet balance
@@ -234,7 +222,7 @@ class PayWalletLogic(
     suspend fun freezeInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
         if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_FREEZE, bizId)) return
         val wallet = PayWalletTable.get(walletId)
-            ?: walletNotFound("Wallet not found: $walletId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         PayWalletFreezeRules.ensureCanFreeze(wallet.balance, wallet.freezePrice, amount)
         // 落一条冻结记录再重算缓存，而不是直接 `freezePrice += amount`。
         //
@@ -263,7 +251,7 @@ class PayWalletLogic(
     suspend fun unfreezeInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
         if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_UNFREEZE, bizId)) return
         val wallet = PayWalletTable.get(walletId)
-            ?: walletNotFound("Wallet not found: $walletId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         PayWalletFreezeRules.ensureCanUnfreeze(wallet.freezePrice, amount)
         // RELEASED = 放行，钱回到可用余额（与打款实扣的 CONSUMED 区分开）。
         freezes.finishByRefInTx(
@@ -281,7 +269,7 @@ class PayWalletLogic(
     suspend fun deductFrozenInTx(walletId: Long, amount: Long, bizId: Long, title: String) {
         if (withdrawLedgerExists(BIZ_TYPE_WITHDRAW_DEDUCT, bizId)) return
         val wallet = PayWalletTable.get(walletId)
-            ?: walletNotFound("Wallet not found: $walletId")
+            ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         PayWalletFreezeRules.ensureCanDeductFrozen(wallet.balance, wallet.freezePrice, amount)
         val newBalance = wallet.balance - amount
         PayWalletTable.update(
@@ -335,13 +323,14 @@ class PayWalletLogic(
      */
     suspend fun applyMoneyMoveInTx(walletId: Long, price: Long, bizType: Int, bizId: Long, title: String) {
         if (withdrawLedgerExists(bizType, bizId)) return
-        val wallet = PayWalletTable.get(walletId) ?: walletNotFound("Wallet not found: $walletId")
+        val wallet = PayWalletTable.get(walletId) ?: walletNotFound(PaymentErrorCodes.WALLET_NOT_FOUND)
         val newBalance = wallet.balance + price
-        requireState(newBalance >= 0) { "Insufficient balance for wallet: $walletId" }
+        requireState(newBalance >= 0, PaymentErrorCodes.WALLET_BALANCE_INSUFFICIENT)
         if (price < 0) {
-            requireState(PayWalletFreezeRules.debitKeepsFrozenSafe(newBalance, wallet.freezePrice)) {
-                "Insufficient available balance (frozen funds protected) for wallet: $walletId"
-            }
+            requireState(
+                PayWalletFreezeRules.debitKeepsFrozenSafe(newBalance, wallet.freezePrice),
+                PaymentErrorCodes.WALLET_AVAILABLE_BALANCE_INSUFFICIENT,
+            )
         }
         PayWalletTable.update(wallet.copy(balance = newBalance))
         insertWithdrawLedger(walletId, bizType, bizId, title, price = price, balance = newBalance)
@@ -441,7 +430,7 @@ class PayWalletLogic(
         bonusPrice: Long = 0,
         packageId: Long? = null
     ): Long {
-        require(payPrice <= totalPrice) { "payPrice ($payPrice) must not exceed totalPrice ($totalPrice)" }
+        requireParam(payPrice <= totalPrice, PaymentErrorCodes.AMOUNT_INVALID, "payPrice")
         // 充值是资金入口：无钱包用户懒创建（与红包领取/转账入账同语义），不能 500 挡住首充。
         val wallet = getWalletByUserId(userId) ?: db.transaction { getOrCreateWalletInTx(userId) }
         val recharge = PayWalletRecharge(
@@ -480,7 +469,7 @@ class PayWalletLogic(
     suspend fun markRechargePaid(id: Long, payChannelCode: String) {
         db.transaction {
             val recharge = PayWalletRechargeTable.get(id)
-                ?: throw IllegalArgumentException("Recharge not found: $id")
+                ?: walletNotFound(PaymentErrorCodes.WALLET_RECHARGE_NOT_FOUND)
             if (recharge.payStatus == PayWalletRechargeStateMachine.PAY_STATUS_PAID) {
                 return@transaction
             }
@@ -500,7 +489,7 @@ class PayWalletLogic(
                 set(PayWalletRecharge::payChannelCode, payChannelCode)
             }
             if (updated == 0L) {
-                throw IllegalStateException("Recharge $id was concurrently modified. Please retry.")
+                walletConflict(PaymentErrorCodes.WALLET_RECHARGE_CONCURRENT_MODIFIED)
             }
 
             applyBalanceUpdate(
@@ -516,7 +505,7 @@ class PayWalletLogic(
     suspend fun markRechargeRefundRequested(id: Long) {
         db.transaction {
             val recharge = PayWalletRechargeTable.get(id)
-                ?: throw IllegalArgumentException("Recharge not found: $id")
+                ?: walletNotFound(PaymentErrorCodes.WALLET_RECHARGE_NOT_FOUND)
             PayWalletRechargeStateMachine.ensureCanRequestRefund(recharge)
             PayWalletRechargeTable.update(
                 recharge.copy(
@@ -530,7 +519,7 @@ class PayWalletLogic(
     suspend fun markRechargeRefunded(id: Long) {
         db.transaction {
             val recharge = PayWalletRechargeTable.get(id)
-                ?: throw IllegalArgumentException("Recharge not found: $id")
+                ?: walletNotFound(PaymentErrorCodes.WALLET_RECHARGE_NOT_FOUND)
             if (recharge.refundStatus == PayWalletRechargeStateMachine.REFUND_STATUS_REFUNDED) {
                 return@transaction
             }
@@ -548,7 +537,7 @@ class PayWalletLogic(
                 set(PayWalletRecharge::refundStatus, PayWalletRechargeStateMachine.REFUND_STATUS_REFUNDED)
             }
             if (updated == 0L) {
-                throw IllegalStateException("Recharge $id refund was concurrently modified. Please retry.")
+                walletConflict(PaymentErrorCodes.WALLET_RECHARGE_CONCURRENT_MODIFIED)
             }
 
             applyBalanceUpdate(

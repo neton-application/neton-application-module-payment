@@ -15,28 +15,28 @@ internal object PayWalletRechargeStateMachine {
             return
         }
         if (recharge.refundStatus != REFUND_STATUS_NONE) {
-            throw IllegalArgumentException("Recharge refund flow already started: ${recharge.id}")
+            walletConflict(PaymentErrorCodes.WALLET_RECHARGE_REFUND_IN_PROGRESS)
         }
     }
 
     fun ensureCanRequestRefund(recharge: PayWalletRecharge) {
         if (recharge.payStatus != PAY_STATUS_PAID) {
-            throw IllegalArgumentException("Recharge not paid yet: ${recharge.id}")
+            walletConflict(PaymentErrorCodes.WALLET_RECHARGE_NOT_PAID)
         }
         if (recharge.refundStatus != REFUND_STATUS_NONE) {
-            throw IllegalArgumentException("Recharge refund already requested: ${recharge.id}")
+            walletConflict(PaymentErrorCodes.WALLET_RECHARGE_REFUND_ALREADY_REQUESTED)
         }
     }
 
     fun ensureCanMarkRefunded(recharge: PayWalletRecharge) {
         if (recharge.payStatus != PAY_STATUS_PAID) {
-            throw IllegalArgumentException("Recharge not paid yet: ${recharge.id}")
+            walletConflict(PaymentErrorCodes.WALLET_RECHARGE_NOT_PAID)
         }
         if (recharge.refundStatus == REFUND_STATUS_REFUNDED) {
             return
         }
         if (recharge.refundStatus != REFUND_STATUS_REQUESTED) {
-            throw IllegalArgumentException("Recharge refund must be requested first: ${recharge.id}")
+            walletConflict(PaymentErrorCodes.WALLET_RECHARGE_REFUND_NOT_REQUESTED)
         }
     }
 }

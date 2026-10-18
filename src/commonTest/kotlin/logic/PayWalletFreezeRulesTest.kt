@@ -22,24 +22,29 @@ class PayWalletFreezeRulesTest {
 
     @Test
     fun `freeze rejected when available insufficient`() {
-        assertFailsWith<HttpException> {
+        val e = assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanFreeze(balance = 100, freezePrice = 30, amount = 71)
         }
+        assertEquals(PaymentErrorCodes.WALLET_AVAILABLE_BALANCE_INSUFFICIENT, e.message)
     }
 
     @Test
     fun `freeze rejected when amount not positive`() {
-        assertFailsWith<HttpException> {
+        val e = assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanFreeze(balance = 100, freezePrice = 0, amount = 0)
         }
+        assertEquals(PaymentErrorCodes.AMOUNT_INVALID, e.message)
+        assertEquals(listOf("amount"), e.errors.map { it.path })
+        assertEquals(PaymentErrorCodes.AMOUNT_INVALID, e.errors.single().code)
     }
 
     @Test
     fun `unfreeze rejected when exceeds frozen`() {
         PayWalletFreezeRules.ensureCanUnfreeze(freezePrice = 50, amount = 50)
-        assertFailsWith<HttpException> {
+        val e = assertFailsWith<HttpException> {
             PayWalletFreezeRules.ensureCanUnfreeze(freezePrice = 50, amount = 51)
         }
+        assertEquals(PaymentErrorCodes.WALLET_FROZEN_AMOUNT_INSUFFICIENT, e.message)
     }
 
     @Test

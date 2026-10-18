@@ -59,9 +59,9 @@ class UserBankCardLogic(
         bankCode: String?,
         cardNo: String,
     ): BankCardView {
-        requireParam(holderName.isNotBlank()) { "holderName is required" }
-        requireParam(bankName.isNotBlank()) { "bankName is required" }
-        requireParam(cardNo.isNotBlank()) { "cardNo is required" }
+        requireParam(holderName.isNotBlank(), PaymentErrorCodes.BANK_CARD_HOLDER_NAME_REQUIRED, "holderName")
+        requireParam(bankName.isNotBlank(), PaymentErrorCodes.BANK_CARD_BANK_NAME_REQUIRED, "bankName")
+        requireParam(cardNo.isNotBlank(), PaymentErrorCodes.BANK_CARD_NUMBER_REQUIRED, "cardNo")
 
         // 卡号格式在**业务层**判定：此前唯一的校验藏在 BankCardCrypto.encrypt 的裸
         // require 里，非法卡号抛 IllegalArgumentException → HTTP 500，用户只看到没有
@@ -70,9 +70,11 @@ class UserBankCardLogic(
         // 归一化也提前到这里：去重查询必须用规范化后的卡号，且非法输入不得触发
         // hash / encrypt / 查库 / 写库。
         val normalizedCardNo = BankCardCrypto.normalize(cardNo)
-        requireParam(normalizedCardNo.length in 8..19 && normalizedCardNo.all { it.isDigit() }) {
-            "invalid card number"
-        }
+        requireParam(
+            normalizedCardNo.length in 8..19 && normalizedCardNo.all { it.isDigit() },
+            PaymentErrorCodes.BANK_CARD_NUMBER_INVALID,
+            "cardNo",
+        )
 
         val c = requireCrypto()
         val hash = c.hashOf(normalizedCardNo)
@@ -167,10 +169,7 @@ class UserBankCardLogic(
             }
         }.list()
         if (blocking.isNotEmpty()) {
-            walletBadRequest(
-                "该卡有 ${blocking.size} 笔提现尚未打款（单号 ${blocking.joinToString(", ") { "#" + it.id }}），" +
-                    "请先处理这些提现单再解绑"
-            )
+            walletBadRequest(PaymentErrorCodes.BANK_CARD_HAS_PENDING_WITHDRAWALS)
         }
 
         val now = nowMillis()
@@ -214,7 +213,7 @@ class UserBankCardLogic(
      */
     suspend fun adminRevealCardNo(op: OperatorContext, id: Long): String {
         val card = UserBankCardTable.get(id)
-            ?: walletNotFound("bank card not found: $id")
+            ?: walletNotFound(PaymentErrorCodes.BANK_CARD_NOT_FOUND)
         val full = requireCrypto().decrypt(card.cardNoCiphertext, card.encryptedDataKey)
         // 不可抵赖（P0/V007）：落 DB 敏感操作审计行 + 保留非静默日志。
         PaySensitiveAuditLogTable.insert(
