@@ -53,6 +53,8 @@ class AlipayPayPlatform(
             put("product_code", "QUICK_WAP_PAY")
             order.body?.takeIf { it.isNotBlank() }?.let { put("body", it) }
             returnUrlOf(channel).takeIf { it.isNotBlank() }?.let { put("quit_url", it) }
+            // 让支付宝在本地订单过期时也拒绝付款：否则我们这边关了单，用户在收银台照样能付
+            order.expireTime?.let { put("time_expire", formatAlipayTime(it)) }
         }.toString()
 
         val params = commonParams(cfg, METHOD_WAP_PAY, biz).toMutableMap()
@@ -90,6 +92,9 @@ class AlipayPayPlatform(
             return null
         }
 
+        // 同一套支付宝公钥下，别的应用的回调签名同样有效：不是本渠道 app_id 的一律不认
+        if (params["app_id"] != cfg.appId) return null
+
         val merchantOrderId = params["out_trade_no"]?.takeIf { it.isNotBlank() } ?: return null
         // 支付宝没有"退款成功"这个交易状态：有退款金额就说明发生过退款
         val refunded = (params["refund_fee"]?.toDoubleOrNull() ?: 0.0) > 0.0
@@ -102,6 +107,7 @@ class AlipayPayPlatform(
             paidAt = if (state == PlatformOrderState.SUCCESS) {
                 parseAlipayTime(params["gmt_payment"]) ?: Clock.System.now().toEpochMilliseconds()
             } else null,
+            paidAmount = centsOf(params["total_amount"]),
         )
     }
 
@@ -119,6 +125,7 @@ class AlipayPayPlatform(
                 parseAlipayTime(response["send_pay_date"]?.jsonPrimitive?.contentOrNull)
                     ?: Clock.System.now().toEpochMilliseconds()
             } else null,
+            paidAmount = centsOf(response["total_amount"]?.jsonPrimitive?.contentOrNull),
         )
     }
 
@@ -200,6 +207,17 @@ class AlipayPayPlatform(
     /** 分 → 元，保留两位小数。支付宝金额单位是元且必须带两位。 */
     private fun yuan(cents: Long): String = "${cents / 100}.${(cents % 100).toString().padStart(2, '0')}"
 
+    /**
+     * 元 → 分，按字符串精确换算，不走浮点（0.1 元经 Double 会变成 9 分）。
+     * 只认 `12` / `12.3` / `12.34`；三位小数、科学计数、负数、空串一律 null，由入账处按「金额未知」拒绝。
+     */
+    private fun centsOf(yuan: String?): Long? {
+        val m = yuan?.trim()?.let { Regex("^(\\d{1,12})(?:\\.(\\d{1,2}))?$").matchEntire(it) } ?: return null
+        val whole = m.groupValues[1].toLong()
+        val frac = m.groupValues[2].padEnd(2, '0').ifEmpty { "00" }.toLong()
+        return whole * 100 + frac
+    }
+
     /** `yyyy-MM-dd HH:mm:ss` → epoch 毫秒；解析不了返回 null 由调用方兜底。 */
     private fun parseAlipayTime(text: String?): Long? {
         val t = text?.trim()?.takeIf { it.length >= 19 } ?: return null
@@ -218,8 +236,11 @@ class AlipayPayPlatform(
         }
     }
 
-    private fun nowTimestamp(): String {
-        val epochSecond = Clock.System.now().toEpochMilliseconds() / 1000 + 8 * 3600 // 东八区
+    private fun nowTimestamp(): String = formatAlipayTime(Clock.System.now().toEpochMilliseconds())
+
+    /** 毫秒时间戳 → 支付宝的东八区 `yyyy-MM-dd HH:mm:ss`（与 [parseAlipayTime] 互逆）。 */
+    internal fun formatAlipayTime(epochMillis: Long): String {
+        val epochSecond = epochMillis / 1000 + 8 * 3600 // 东八区
         val days = epochSecond / 86_400
         val secondOfDay = epochSecond % 86_400
         val (y, m, d) = civilFromDays(days)

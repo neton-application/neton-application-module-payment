@@ -52,6 +52,14 @@ class SifangPayPlatformTest {
         assertEquals(1700000000000L, r?.paidAt)
     }
 
+    /** 实付金额（分）随回调带回，入账前与订单金额核对。 */
+    @Test
+    fun notifyCarriesPaidAmount() = runBlocking {
+        val params = mapOf("mchOrderNo" to "m-1", "status" to "2", "amount" to "1234")
+        val signed = params + ("sign" to sign(*params.map { it.key to it.value }.toTypedArray()))
+        assertEquals(1234L, qijiu.parseNotify(PlatformNotifyRequest(params = signed), channel())?.paidAmount)
+    }
+
     @Test
     fun rejectsNotifyWithBadSign() = runBlocking {
         val params = mapOf("mchOrderNo" to "m-1", "status" to "2", "sign" to "DEADBEEF")

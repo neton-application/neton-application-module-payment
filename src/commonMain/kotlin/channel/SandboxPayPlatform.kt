@@ -40,8 +40,17 @@ class SandboxPayPlatform : PayPlatform {
                 ?: "SANDBOX-${channel.code}-$merchantOrderId",
             state = if (paid) PlatformOrderState.SUCCESS else PlatformOrderState.WAITING,
             paidAt = if (paid) Clock.System.now().toEpochMilliseconds() else null,
+            // 沙箱没有真实金额；测试「金额不符」时可以在回调里带 amount（分）
+            paidAmount = request.params["amount"]?.toLongOrNull(),
         )
     }
+
+    /** 沙箱退款即时成功：用来跑通「退款 → 业务回收权益」，不经过任何平台。 */
+    override suspend fun refund(command: RefundCommand, channel: PayChannel): RefundResult = RefundResult(
+        merchantRefundId = command.merchantRefundId,
+        platformRefundId = "SANDBOX-REFUND-${command.merchantRefundId}",
+        success = true,
+    )
 
     /**
      * 沙箱不实现查单：这里没有"平台那边的真相"可查，订单状态完全由点按钮决定。

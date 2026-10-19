@@ -5,6 +5,7 @@ import channel.RefundCommand
 import channel.PayPlatform
 import channel.PayPlatformRegistry
 import channel.PlatformNotifyRequest
+import channel.PlatformNotifyResult
 import channel.PlatformOrderState
 import setting.PaymentSettingKeys
 import setting.currentValue
@@ -120,8 +121,22 @@ class PayOrderLogic(
         val order = PayOrderTable.oneWhere { PayOrder::merchantOrderId eq result.merchantOrderId }
             ?: throw NotFoundException(PaymentErrorCodes.PAY_ORDER_NOT_FOUND)
         if (order.status == STATUS_SUCCESS) return true // 幂等
+        if (!amountMatches(order, result, route.platform.sandbox, "notify")) return false
         updateSuccess(order.id, result.platformOrderNo, result.paidAt ?: return false)
         return true
+    }
+
+    /**
+     * 金额对不上不入账，记 ERROR：这不是渠道抖动，而是篡改、串单或渠道配置错，必须有人看。
+     * 回调路径返回 false 让平台继续重试（不会被确认吞掉）；对账路径跳过，订单保持待支付。
+     */
+    private fun amountMatches(order: PayOrder, result: PlatformNotifyResult, sandbox: Boolean, via: String): Boolean {
+        if (PaidAmountCheck.accepts(order.price, result.paidAmount, sandbox)) return true
+        log.error("pay.order.amount_mismatch", mapOf(
+            "id" to order.id, "merchantOrderId" to order.merchantOrderId, "channel" to order.channelCode,
+            "orderPrice" to order.price, "paidAmount" to (result.paidAmount ?: "unknown"), "via" to via,
+        ))
+        return false
     }
 
     /** 回调应答内容，交由渠道决定；渠道不可用时给一个通用失败回执。 */
@@ -199,13 +214,13 @@ class PayOrderLogic(
      * 与 [updateSuccess] 一样放进事务：退款和权益回收必须同生共死，
      * 否则会出现「退了钱但 VIP 还在」。原实现既没有事务也不通知任何人。
      */
-    suspend fun updateRefund(id: Long) {
+    suspend fun updateRefund(id: Long, refundAmount: Long) {
         db.transaction {
             val order = PayOrderTable.get(id) ?: return@transaction
             if (order.status == STATUS_REFUND) return@transaction // 幂等
             val refunded = order.copy(status = STATUS_REFUND)
             PayOrderTable.update(refunded)
-            events.publish(PayOrderRefundedEvent(refunded))
+            events.publish(PayOrderRefundedEvent(refunded, refundAmount))
             log.info("pay.order.refund", mapOf("id" to id))
         }
     }
@@ -284,7 +299,9 @@ class PayOrderLogic(
                 null
             } ?: continue
 
-            if (state.state == PlatformOrderState.SUCCESS && state.paidAt != null) {
+            if (state.state == PlatformOrderState.SUCCESS && state.paidAt != null &&
+                amountMatches(order, state, route.platform.sandbox, "reconcile")
+            ) {
                 updateSuccess(order.id, state.platformOrderNo, state.paidAt)
                 recovered++
             }
@@ -326,6 +343,18 @@ class PayOrderLogic(
             )
         }
 
+        // 异步退款的平台受理后，订单在回调到来前仍是「已支付」，此时可以再发起一笔：
+        // 每笔单独看都不超过订单金额，合起来却能退超。处理中与成功的都算进已退。
+        val alreadyRefunded = PayRefundTable.query { where { PayRefund::orderId eq order.id } }.list()
+            .filter { it.status == REFUND_STATUS_PROCESSING || it.status == REFUND_STATUS_SUCCESS }
+            .sumOf { it.refundPrice }
+        if (alreadyRefunded + refundAmount > order.price) {
+            throw BadRequestException(
+                PaymentErrorCodes.AMOUNT_INVALID,
+                listOf(ValidationError("refundAmount", PaymentErrorCodes.AMOUNT_INVALID, PaymentErrorCodes.AMOUNT_INVALID)),
+            )
+        }
+
         val route = resolveRoute(order.channelCode)
             ?: throw BadRequestException(PaymentErrorCodes.PAY_CHANNEL_UNAVAILABLE)
 
@@ -354,7 +383,7 @@ class PayOrderLogic(
             )
         )
         // 同步退款的平台此刻已确认，直接推进订单并通知业务方回收权益
-        if (result.success) updateRefund(order.id)
+        if (result.success) updateRefund(order.id, refundAmount)
         return record
     }
 
@@ -370,7 +399,7 @@ class PayOrderLogic(
         if (record.status == REFUND_STATUS_SUCCESS) return true // 幂等
 
         PayRefundTable.update(record.copy(status = REFUND_STATUS_SUCCESS))
-        updateRefund(record.orderId)
+        updateRefund(record.orderId, record.refundPrice)
         return true
     }
 

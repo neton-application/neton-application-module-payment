@@ -89,7 +89,8 @@ class SifangPayPlatform(
         val cfg = runCatching { config(channel) }.getOrNull() ?: return null
         val params = request.params
         val sign = params["sign"]?.takeIf { it.isNotBlank() } ?: return null
-        if (sign != signOf(params.filterKeys { it != "sign" }, cfg.key)) return null
+        // 恒定时间比较：逐字节 != 会按第一个不同字符提前返回，响应时间能被用来逐位猜签名
+        if (!constantTimeEquals(sign, signOf(params.filterKeys { it != "sign" }, cfg.key))) return null
 
         val merchantOrderId = params["mchOrderNo"]?.takeIf { it.isNotBlank() } ?: return null
         val state = stateOf(params["status"]?.toIntOrNull())
@@ -101,6 +102,8 @@ class SifangPayPlatform(
             paidAt = if (state == PlatformOrderState.SUCCESS) {
                 params["paySuccTime"]?.toLongOrNull() ?: Clock.System.now().toEpochMilliseconds()
             } else null,
+            // 平台以分为单位，与本系统一致
+            paidAmount = params["amount"]?.trim()?.toLongOrNull()?.takeIf { it >= 0 },
         )
     }
 
@@ -120,10 +123,18 @@ class SifangPayPlatform(
                 response["paySuccTime"]?.jsonPrimitive?.longOrNull
                     ?: Clock.System.now().toEpochMilliseconds()
             } else null,
+            paidAmount = response["amount"]?.jsonPrimitive?.contentOrNull?.trim()?.toLongOrNull()?.takeIf { it >= 0 },
         )
     }
 
     // ==================== 内部实现 ====================
+
+    private fun constantTimeEquals(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var diff = 0
+        for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
+        return diff == 0
+    }
 
     private suspend fun post(url: String, params: Map<String, Any>, key: String): JsonObject? {
         val signed = params + ("sign" to signOf(params.mapValues { it.value.toString() }, key))

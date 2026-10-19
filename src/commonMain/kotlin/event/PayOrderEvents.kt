@@ -23,9 +23,18 @@ sealed interface PayOrderEvent : DomainEvent {
 @Serializable
 data class PayOrderPaidEvent(override val order: PayOrder) : PayOrderEvent
 
-/** 已退款。消费方据此回收之前发放的权益。 */
+/**
+ * 已退款。消费方据此回收之前发放的权益。
+ *
+ * [refundAmount] 是这次实际退掉的金额（分），可能小于订单金额（部分退款）——
+ * 按比例发放权益的消费方（如网关额度）要靠它算该收回多少。默认值等于订单金额，
+ * 只为兼容加这个字段之前落库、尚未投递的事件。
+ */
 @Serializable
-data class PayOrderRefundedEvent(override val order: PayOrder) : PayOrderEvent
+data class PayOrderRefundedEvent(
+    override val order: PayOrder,
+    val refundAmount: Long = order.price,
+) : PayOrderEvent
 
 /** 订单关闭（超时/取消），从未支付。消费方通常只需清理占位数据。 */
 @Serializable

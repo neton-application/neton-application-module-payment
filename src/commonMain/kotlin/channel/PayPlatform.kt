@@ -82,6 +82,12 @@ data class PlatformNotifyResult(
     val state: PlatformOrderState,
     /** 支付成功时间；非成功态为 null。 */
     val paidAt: Long? = null,
+    /**
+     * 实付金额（分），平台报多少就是多少。入账前与订单金额核对（[logic.PaidAmountCheck]）：
+     * 只看「交易成功」的话，改了金额再用真签名付一笔小钱也能按原订单入账。
+     * 平台没给或格式不合法时为 null，真实平台下按「无法核对」拒绝入账。
+     */
+    val paidAmount: Long? = null,
 )
 
 /**

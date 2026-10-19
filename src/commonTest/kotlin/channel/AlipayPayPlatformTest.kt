@@ -44,7 +44,7 @@ class AlipayPayPlatformTest {
     @Test
     fun acceptsNotifyWithValidSign() = runBlocking {
         val params = mapOf(
-            "out_trade_no" to "m-1",
+            "app_id" to "2021000000000000", "out_trade_no" to "m-1",
             "trade_no" to "2024TRADE01",
             "trade_status" to "TRADE_SUCCESS",
             "gmt_payment" to "2026-08-15 10:30:00",
@@ -57,10 +57,51 @@ class AlipayPayPlatformTest {
         assertTrue((r?.paidAt ?: 0L) > 0L, "成功态必须带支付时间")
     }
 
+    /** 实付金额按分带回：入账前要与订单金额核对，不能只看「交易成功」。元转分不能走浮点。 */
+    @Test
+    fun notifyCarriesPaidAmountInCents() = runBlocking {
+        for ((yuan, cents) in listOf("12.34" to 1234L, "0.1" to 10L, "5" to 500L, "0.07" to 7L)) {
+            val params = mapOf(
+                "app_id" to "2021000000000000", "out_trade_no" to "m-1", "trade_no" to "T1",
+                "trade_status" to "TRADE_SUCCESS", "total_amount" to yuan,
+            )
+            val r = platform.parseNotify(PlatformNotifyRequest(params = params + ("sign" to signOf(params))), channel())
+            assertEquals(cents, r?.paidAmount, "total_amount=$yuan")
+        }
+    }
+
+    /** 金额格式不合法时不猜：返回 null，由入账处按「金额未知」拒绝。 */
+    @Test
+    fun malformedAmountIsUnknown() = runBlocking {
+        for (bad in listOf("12.345", "1e3", "-1.00", "", "abc")) {
+            val params = mapOf("app_id" to "2021000000000000", "out_trade_no" to "m-1", "trade_status" to "TRADE_SUCCESS", "total_amount" to bad)
+            val r = platform.parseNotify(PlatformNotifyRequest(params = params + ("sign" to signOf(params))), channel())
+            assertNull(r?.paidAmount, "total_amount=[$bad]")
+        }
+    }
+
+    /** 别的应用的回调（同一个支付宝公钥体系下签名同样有效）不能入本渠道的账。 */
+    @Test
+    fun rejectsNotifyForAnotherApp() = runBlocking {
+        val params = mapOf(
+            "app_id" to "2021999999999999", "out_trade_no" to "m-1", "trade_no" to "T1",
+            "trade_status" to "TRADE_SUCCESS", "total_amount" to "12.34",
+        )
+        assertNull(platform.parseNotify(PlatformNotifyRequest(params = params + ("sign" to signOf(params))), channel()))
+    }
+
+    /** time_expire 用东八区时间：UTC 02:30 是北京时间 10:30。 */
+    @Test
+    fun expireTimeIsFormattedInBeijingTime() {
+        // 2026-08-15 02:30:00 UTC
+        assertEquals("2026-08-15 10:30:00", platform.formatAlipayTime(1786761000000L))
+        assertEquals("2026-01-01 08:00:00", platform.formatAlipayTime(1767225600000L))
+    }
+
     /** sign_type 必须排除在待签串外，否则永远验不过 —— 支付宝的规定。 */
     @Test
     fun signTypeIsExcludedFromSigningString() = runBlocking {
-        val params = mapOf("out_trade_no" to "m-2", "trade_status" to "TRADE_SUCCESS")
+        val params = mapOf("app_id" to "2021000000000000", "out_trade_no" to "m-2", "trade_status" to "TRADE_SUCCESS")
         val wrong = RsaSha256.signBase64(
             privateKey,
             (params + ("sign_type" to "RSA2")).entries.sortedBy { it.key }
@@ -83,7 +124,7 @@ class AlipayPayPlatformTest {
     @Test
     fun refundFeePresentMeansRefunded() = runBlocking {
         val params = mapOf(
-            "out_trade_no" to "m-4",
+            "app_id" to "2021000000000000", "out_trade_no" to "m-4",
             "trade_status" to "TRADE_SUCCESS",
             "refund_fee" to "9.90",
         )
@@ -96,7 +137,7 @@ class AlipayPayPlatformTest {
     /** 未知交易状态按关闭处理，绝不能误判成已支付。 */
     @Test
     fun unknownTradeStatusIsClosed() = runBlocking {
-        val params = mapOf("out_trade_no" to "m-5", "trade_status" to "SOMETHING_NEW")
+        val params = mapOf("app_id" to "2021000000000000", "out_trade_no" to "m-5", "trade_status" to "SOMETHING_NEW")
         val signed = params + mapOf("sign" to signOf(params), "sign_type" to "RSA2")
         assertEquals(
             PlatformOrderState.CLOSED,
