@@ -26,7 +26,8 @@ data class OperatorContext(
         fun from(identity: Identity, ctx: HttpContext): OperatorContext = OperatorContext(
             operatorId = identity.id.toLong(),
             operatorRole = identity.roles.joinToString(",").ifBlank { null },
-            ip = ctx.request.remoteAddress.ifBlank { null },
+            // 审计 IP 用框架按可信代理解析的来源；remoteAddress 取 XFF 最左项，可伪造
+            ip = ctx.request.clientAddress.takeIf { it.isNotBlank() && it != "unknown" },
             userAgent = ctx.request.userAgent,
             traceId = ctx.traceId.ifBlank { null },
         )
