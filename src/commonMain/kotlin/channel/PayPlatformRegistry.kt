@@ -28,12 +28,16 @@ class PayPlatformRegistry(platforms: List<PayPlatform>) {
         /**
          * 默认注册表：沙箱 + 已对接的真实平台。
          *
+         * [http] 必须是**受控出站客户端**（neton-http `GuardedHttpClientProvider` 建的）：各平台的网关地址
+         * （支付宝 serverUrl、四方 apiUrl）来自后台渠道配置，普通客户端会让一条渠道配置把请求打进内网。
+         * [init.PaymentRuntimeBootstrap] 就是这样建的；装配层只经 [PayCallbackHooks] 给回调地址。
+         *
          * 两者可以同时登记 —— 究竟哪一类可用由 payment.mock.enabled 的互斥决定，
          * 而不是靠这里少注册一个。装配层需要其它自定义时自行 bind 覆盖。
          *
          * **两个回调地址 hook 默认给空串，也就是不写 notify_url / return_url。**
-         * 部署在哪个域名下是部署事实，模块自己无从知道；装配层应当 bind 一份带上
-         * 真实基址的注册表（见 [payNotifyUrlOf]）。留空不会让下单失败，
+         * 部署在哪个域名下是部署事实，模块自己无从知道；装配层应当 bind 一份
+         * [PayCallbackHooks]（见 [payNotifyUrlOf]）。留空不会让下单失败，
          * 只是渠道不会主动回调，退化成靠 PayOrderReconcileJob 查单兜底
          * （十分钟一轮），并且用户付完停在渠道页面上回不来。
          *

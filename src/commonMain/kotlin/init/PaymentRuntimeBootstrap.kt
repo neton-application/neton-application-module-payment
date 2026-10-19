@@ -33,12 +33,21 @@ object PaymentRuntimeBootstrap {
             ?.register(setting.PaymentSettingKeys.definitions)
 
         val orderLog = ctx.get(LoggerFactory::class).get("logic.pay-order")
-        val registry = ctx.getOrNull(PayPlatformRegistry::class) ?: PayPlatformRegistry.default(
-            ctx.getOrNull(neton.http.client.HttpClient::class) ?: error(
-                "module-payment needs an HttpClient bound in NetonContext (pay platforms). Build one in the " +
-                    "application with HttpClient.create { } and bind(HttpClient::class, it).",
-            ),
-        )
+        // 平台对接地址（支付宝 serverUrl、四方 apiUrl）是后台渠道配置：平台请求一律走受控出站客户端
+        // （运维出站策略 application.conf [egress]，module-system 绑定）。回调地址 hook 由装配层给（PayCallbackHooks）。
+        val registry = ctx.getOrNull(PayPlatformRegistry::class) ?: run {
+            val guarded = ctx.getOrNull(neton.http.client.GuardedHttpClientProvider::class) ?: error(
+                "module-payment needs a GuardedHttpClientProvider bound in NetonContext (module-system binds it from " +
+                    "application.conf [egress]; it must initialize before module-payment).",
+            )
+            val platformHttp = guarded.create { connectMillis = 5_000; requestMillis = 15_000; socketMillis = 15_000 }
+            ctx.lifecycle.register("payment-platform-http-client", object : neton.core.component.NetonLifecycle {
+                override suspend fun start() = Unit
+                override suspend fun stop() = platformHttp.close()
+            })
+            val hooks = ctx.getOrNull(channel.PayCallbackHooks::class) ?: channel.PayCallbackHooks()
+            PayPlatformRegistry.default(platformHttp, notifyUrlOf = hooks.notifyUrlOf, returnUrlOf = hooks.returnUrlOf)
+        }
         // 总线由框架在启动最早期绑定，这里必然取得到。用 get 而不是 getOrNull：
         // 后者配上 PayOrderLogic 里的 `events?.publish(...)`，漏装配时是整条链路静默空转
         // （在线充值不自动到账，且没有任何信号），正是之前发生过的事。
