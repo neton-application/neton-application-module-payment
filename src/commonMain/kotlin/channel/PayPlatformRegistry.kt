@@ -33,7 +33,7 @@ class PayPlatformRegistry(platforms: List<PayPlatform>) {
          * [init.PaymentRuntimeBootstrap] 就是这样建的；装配层只经 [PayCallbackHooks] 给回调地址。
          *
          * 两者可以同时登记 —— 究竟哪一类可用由 payment.mock.enabled 的互斥决定，
-         * 而不是靠这里少注册一个。装配层需要其它自定义时自行 bind 覆盖。
+         * 而不是靠这里少注册一个。注册表只由 payment 自己建（宿主 bind 不到）：平台客户端必须是受控的。
          *
          * **两个回调地址 hook 默认给空串，也就是不写 notify_url / return_url。**
          * 部署在哪个域名下是部署事实，模块自己无从知道；装配层应当 bind 一份

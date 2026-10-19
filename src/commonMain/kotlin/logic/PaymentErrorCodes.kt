@@ -94,4 +94,9 @@ object PaymentErrorCodes {
     const val PAY_ORDER_NOT_PAID = "PAY_ORDER_NOT_PAID"
     /** 模拟支付未开启（对外表现为 404）。 */
     const val MOCK_PAY_DISABLED = "MOCK_PAY_DISABLED"
+    /**
+     * 渠道配置的平台网关地址（支付宝 serverUrl、四方 apiUrl）被运维出站策略 `[egress]` 拒绝：解析到回环 / 内网 /
+     * 链路本地、端口不在放行列表、或解析不出。一个包都没发出去——与网络失败、平台报错是两回事，要改的是渠道配置或部署配置。
+     */
+    const val PAY_ENDPOINT_FORBIDDEN = "PAY_ENDPOINT_FORBIDDEN"
 }

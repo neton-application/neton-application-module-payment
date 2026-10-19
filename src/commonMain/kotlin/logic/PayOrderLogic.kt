@@ -1,6 +1,7 @@
 package logic
 
 import channel.PayDisplayMode
+import channel.PayEndpointForbiddenException
 import channel.RefundCommand
 import channel.PayPlatform
 import channel.PayPlatformRegistry
@@ -97,12 +98,26 @@ class PayOrderLogic(
     /** 一次支付要用的两样东西：平台知道"怎么调"，通道提供"用哪套凭据、走哪条线"。 */
     private data class Route(val platform: PayPlatform, val channel: PayChannel)
 
+    /**
+     * 调平台。网关地址被运维出站策略拒绝（[PayEndpointForbiddenException]）时在这里记下原因与地址
+     * （只进服务端日志），再原样抛出：对外只有机器码 PAY_ENDPOINT_FORBIDDEN。
+     */
+    private suspend fun <T> platformCall(route: Route, op: String, call: suspend () -> T): T = try {
+        call()
+    } catch (e: PayEndpointForbiddenException) {
+        log.error("pay.platform.endpoint_forbidden", mapOf(
+            "op" to op, "channel" to route.channel.code, "platform" to e.platformCode,
+            "reason" to e.reason.name, "detail" to e.detail,
+        ))
+        throw e
+    }
+
     /** 下单：落 WAITING 订单 → 调渠道 client 拿支付地址，回写渠道单号。 */
     suspend fun submit(order: PayOrder): PrepayVO {
         val route = resolveRoute(order.channelCode)
             ?: throw BadRequestException(PaymentErrorCodes.PAY_CHANNEL_UNAVAILABLE)
         val inserted = PayOrderTable.insert(order.copy(status = STATUS_WAITING))
-        val prepay: PrepayResult = route.platform.prepay(inserted, route.channel)
+        val prepay: PrepayResult = platformCall(route, "prepay") { route.platform.prepay(inserted, route.channel) }
         PayOrderTable.update(inserted.copy(channelOrderNo = prepay.platformOrderNo))
         log.info("pay.order.submit", mapOf("id" to inserted.id, "merchantOrderId" to order.merchantOrderId,
             "channel" to (order.channelCode ?: "")))
@@ -292,7 +307,9 @@ class PayOrderLogic(
         for (order in waiting) {
             val route = resolveRoute(order.channelCode) ?: continue
             val state = try {
-                route.platform.queryOrder(order.merchantOrderId, route.channel)
+                platformCall(route, "query") { route.platform.queryOrder(order.merchantOrderId, route.channel) }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // 渠道抖动不该中断整批：记下继续，下一轮再试
                 log.warn("pay.order.reconcile.failed", mapOf("id" to order.id, "err" to (e.message ?: "")))
@@ -358,16 +375,18 @@ class PayOrderLogic(
         val route = resolveRoute(order.channelCode)
             ?: throw BadRequestException(PaymentErrorCodes.PAY_CHANNEL_UNAVAILABLE)
 
-        val result = route.platform.refund(
-            RefundCommand(
-                merchantOrderId = merchantOrderId,
-                merchantRefundId = merchantRefundId,
-                refundAmount = refundAmount,
-                originalAmount = order.price,
-                reason = reason,
-            ),
-            route.channel,
-        ) ?: return null // 平台不支持退款
+        val result = platformCall(route, "refund") {
+            route.platform.refund(
+                RefundCommand(
+                    merchantOrderId = merchantOrderId,
+                    merchantRefundId = merchantRefundId,
+                    refundAmount = refundAmount,
+                    originalAmount = order.price,
+                    reason = reason,
+                ),
+                route.channel,
+            )
+        } ?: return null // 平台不支持退款
 
         val record = PayRefundTable.insert(
             PayRefund(

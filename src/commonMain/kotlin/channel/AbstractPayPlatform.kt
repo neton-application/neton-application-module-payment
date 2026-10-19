@@ -10,6 +10,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import model.PayChannel
 import neton.http.client.HttpClientBody
 import neton.http.client.HttpClient
+import neton.http.client.HttpClientError
+import neton.http.client.HttpClientException
 import neton.http.client.HttpClientMethod
 import neton.http.client.HttpClientRequest
 
@@ -73,8 +75,12 @@ abstract class AbstractPayPlatform : PayPlatform {
     /**
      * 发请求并解析 JSON 响应。
      *
-     * 任何失败（网络异常、非 2xx、响应不是 JSON）都返回 null 而不是抛：
-     * 调用点多在对账与回调路径上，单笔失败不该中断整批，由上层决定重试还是跳过。
+     * 网络异常、非 2xx、响应不是 JSON 都返回 null 而不是抛：调用点多在对账与回调路径上，
+     * 单笔失败不该中断整批，由上层决定重试还是跳过。
+     *
+     * 例外是**地址被运维出站策略拒绝**（[PayEndpointForbiddenException]）：那不是一次失败的调用，而是渠道配置
+     * 指向了不许连的地方（内网、回环、云元数据、非放行端口），重试多少次都一样，必须让人看见并改配置。
+     * 取消照常传播。
      */
     protected suspend fun postJson(
         http: HttpClient,
@@ -88,6 +94,11 @@ abstract class AbstractPayPlatform : PayPlatform {
         )
         if (resp.statusCode !in 200..299) null
         else json.parseToJsonElement(resp.body).jsonObject
+    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+        throw e
+    } catch (e: HttpClientException) {
+        val rejected = e.error as? HttpClientError.TargetRejected ?: return null
+        throw PayEndpointForbiddenException(platformCode, rejected.reason, rejected.message)
     } catch (_: Exception) {
         null
     }
