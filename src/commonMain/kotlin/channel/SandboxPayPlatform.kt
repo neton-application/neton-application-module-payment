@@ -14,7 +14,14 @@ import kotlin.time.ExperimentalTime
  * 它同样是"一个平台"，因此可以挂任意多条通道（沙箱-支付宝1、沙箱-微信1…），
  * 前端与真实环境走完全一样的下单流程。由全局设置 payment.mock.enabled 控制。
  */
-class SandboxPayPlatform : PayPlatform {
+class SandboxPayPlatform(
+    /**
+     * 与真实平台同一个回调地址 hook（[PayCallbackHooks.notifyUrlOf]）：从它推出后端对外的 origin，
+     * 收银台给绝对地址。控制台与后端常不在一个域名（控制台 neton.cloud，后端 api.neton.cloud），
+     * 相对地址在控制台页面里打开就落到控制台自己的路由上，打不开收银台。没配回调基址时退回相对地址。
+     */
+    private val notifyUrlOf: (PayChannel) -> String = { "" },
+) : PayPlatform {
 
     override val platformCode: String = PLATFORM_CODE
 
@@ -22,7 +29,7 @@ class SandboxPayPlatform : PayPlatform {
 
     override suspend fun prepay(order: PayOrder, channel: PayChannel): PrepayResult = PrepayResult(
         displayMode = PayDisplayMode.REDIRECT_URL,
-        payload = "/app/pay/mock/checkout" +
+        payload = publicOrigin(channel) + "/app/pay/mock/checkout" +
             "?merchantOrderId=${order.merchantOrderId}&channelCode=${channel.code}",
         platformOrderNo = "SANDBOX-${channel.code}-${order.merchantOrderId}",
     )
@@ -56,6 +63,10 @@ class SandboxPayPlatform : PayPlatform {
      * 沙箱不实现查单：这里没有"平台那边的真相"可查，订单状态完全由点按钮决定。
      * 保持默认的 null，让对账任务跳过沙箱而不是拿到假答案。
      */
+
+    /** 回调地址 = 对外 origin + [payNotifyPath]：去掉路径就是 origin；没配是空串。 */
+    private fun publicOrigin(channel: PayChannel): String =
+        notifyUrlOf(channel).trim().removeSuffix(payNotifyPath(channel.code)).trimEnd('/')
 
     companion object {
         const val PLATFORM_CODE = "sandbox"

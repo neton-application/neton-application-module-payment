@@ -51,7 +51,7 @@ class PayPlatformRegistry(platforms: List<PayPlatform>) {
             returnUrlOf: (model.PayChannel) -> String = { "" },
         ): PayPlatformRegistry = PayPlatformRegistry(
             listOf(
-                SandboxPayPlatform(),
+                SandboxPayPlatform(notifyUrlOf),
                 // 直连：支付宝
                 AlipayPayPlatform(http, notifyUrlOf, returnUrlOf),
             ) +
