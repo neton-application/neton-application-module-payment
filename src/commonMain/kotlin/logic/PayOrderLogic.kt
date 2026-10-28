@@ -327,6 +327,38 @@ class PayOrderLogic(
     }
 
 
+    /** 单笔同步的结果。status：PAID 本次确认已付并入账 / ALREADY_FINAL 订单已不是待支付 / WAITING 平台说还没付 /
+     *  UNSUPPORTED 该渠道不支持查单（沙箱、多数四方）/ QUERY_FAILED 查单出错 / AMOUNT_MISMATCH 平台已付但金额不符。 */
+    @kotlinx.serialization.Serializable
+    data class SyncResult(val id: Long, val status: String, val orderStatus: Int, val message: String? = null)
+
+    /**
+     * 后台「同步支付状态」：对一笔待支付订单**向支付平台查单**，平台确认已付且金额相符才置为已支付（同一事务内发
+     * [PayOrderPaidEvent]，业务方据此入账）。与定时对账 [reconcileWaiting] 同一套判定，只是不等下一轮。
+     *
+     * 刻意**没有**「手动标记已支付」：没有平台凭证就改订单状态，等于后台可以凭空发钱。线下收款由业务方自己的
+     * 手动入账功能处理（如网关的手动充值），不经过支付订单。
+     */
+    suspend fun syncOrder(id: Long): SyncResult {
+        val order = PayOrderTable.get(id) ?: return SyncResult(id, "NOT_FOUND", -1)
+        if (order.status != STATUS_WAITING) return SyncResult(id, "ALREADY_FINAL", order.status)
+        val route = resolveRoute(order.channelCode)
+            ?: return SyncResult(id, "QUERY_FAILED", order.status, "channel ${order.channelCode} is not usable")
+        val state = try {
+            platformCall(route, "query") { route.platform.queryOrder(order.merchantOrderId, route.channel) }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("pay.order.sync.failed", mapOf("id" to order.id, "err" to (e.message ?: "")))
+            return SyncResult(id, "QUERY_FAILED", order.status, e.message)
+        } ?: return SyncResult(id, "UNSUPPORTED", order.status)
+        if (state.state != PlatformOrderState.SUCCESS || state.paidAt == null) return SyncResult(id, "WAITING", order.status)
+        if (!amountMatches(order, state, route.platform.sandbox, "sync")) return SyncResult(id, "AMOUNT_MISMATCH", order.status)
+        updateSuccess(order.id, state.platformOrderNo, state.paidAt)
+        log.info("pay.order.sync.paid", mapOf("id" to order.id))
+        return SyncResult(id, "PAID", PayOrderTable.get(id)?.status ?: STATUS_SUCCESS)
+    }
+
     /**
      * 发起退款：调平台退款接口，登记 pay_refunds，成功则推进订单为已退款。
      *

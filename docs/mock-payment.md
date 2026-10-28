@@ -59,3 +59,14 @@ select * from content_member_vip order by id desc limit 5;                      
 **点了成功但没解锁** —— 看 `merchant_order_id` 的业务前缀是否被某个监听者认领
 （content 认 `content:item:` 与 `content:vip:`）。前缀不匹配时监听者会跳过，
 订单仍会变成已支付。
+
+## 掉单：同步支付状态（真实渠道）
+
+用户付了钱但回调没到时，不要改库、也没有「手动标记已支付」——没有平台凭证改订单状态等于凭空发钱。
+
+- 定时任务 `pay-order-reconcile` 每轮对超过 2 分钟的待支付订单向平台查单，确认已付且金额相符才置为已支付。
+- 后台「支付订单」对待支付订单有「同步支付状态」（`POST /admin/pay/order/sync/{id}`，权限 `pay:order:sync`）：立即查这一笔。
+  结果：`PAID` 已确认并入账 / `WAITING` 平台显示未付 / `UNSUPPORTED` 渠道不支持查单（沙箱与多数四方）/
+  `QUERY_FAILED` 查单出错 / `AMOUNT_MISMATCH` 已付但金额不符（不入账，人工核查）/ `ALREADY_FINAL` 已不是待支付。
+- 沙箱订单没有「平台那边的真相」，同步一律 `UNSUPPORTED`；它的状态只由收银台上的按钮决定。
+- 线下收款（对公转账等）由业务方自己的手动入账功能处理，不经过支付订单。

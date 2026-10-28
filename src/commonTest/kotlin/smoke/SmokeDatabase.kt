@@ -1,3 +1,6 @@
+// 冒烟测试直接初始化数据库连接（SqlxDatabase）：框架把它标为内部 API，测试基建在这里显式声明使用。
+@file:OptIn(neton.core.annotations.InternalNetonApi::class)
+
 package smoke
 
 import model.PayWallet

@@ -42,6 +42,11 @@ class PayOrderController(private val payOrderLogic: PayOrderLogic) {
         return payOrderLogic.submit(order)
     }
 
+    /** 同步支付状态：向支付平台查单，平台确认已付才入账（见 [PayOrderLogic.syncOrder]）。 */
+    @Post("/sync/{id}")
+    @Permission("pay:order:sync")
+    suspend fun sync(@PathVariable id: Long): PayOrderLogic.SyncResult = payOrderLogic.syncOrder(id)
+
     @Get("/page")
     @Permission("pay:order:query")
     suspend fun page(
