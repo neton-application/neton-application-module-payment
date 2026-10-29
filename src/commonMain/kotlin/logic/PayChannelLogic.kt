@@ -45,11 +45,11 @@ class PayChannelLogic(
     }
 
     suspend fun update(request: UpdatePayChannelRequest) {
-        PayChannelTable.get(request.id)
+        val current = PayChannelTable.get(request.id)
             ?: throw NotFoundException(PaymentErrorCodes.PAY_CHANNEL_NOT_FOUND)
+        // 在原记录上改：整行写回时 created_at 不能丢（曾因此每次编辑都 500）
         PayChannelTable.update(
-            PayChannel(
-                id = request.id,
+            current.copy(
                 code = request.code,
                 platformCode = request.platformCode,
                 method = request.method,
@@ -58,7 +58,7 @@ class PayChannelLogic(
                 config = request.config,
                 status = request.status,
                 feeRate = request.feeRate,
-                remark = request.remark
+                remark = request.remark,
             )
         )
     }
@@ -72,12 +72,6 @@ class PayChannelLogic(
     /** 渠道按 code 全局唯一 —— 单应用部署不需要再按 app 维度分组。 */
     suspend fun getByCode(code: String): PayChannel? =
         PayChannelTable.oneWhere { PayChannel::code eq code }
-
-    /** 启用中的通道，供收银台展示。 */
-    suspend fun enabledForApp(): List<PayChannel> =
-        PayChannelTable.query {
-            where { PayChannel::status eq 1 }
-        }.list()
 
     suspend fun getEnableCodeList(): List<String> =
         PayChannelTable.query {

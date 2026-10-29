@@ -95,6 +95,16 @@ class PayOrderLogic(
         return if (mockEnabled == platform.sandbox) Route(platform, channel) else null
     }
 
+    /**
+     * 用户此刻真能拿来下单的通道：启用、平台已登记，且符合模拟 / 真实互斥（与 [resolveRoute] 同一判定）。
+     * 收银台只列这些 —— 否则关掉模拟支付后沙箱通道仍出现在列表里，用户选了只会下单失败。
+     */
+    suspend fun payableChannels(): List<PayChannel> {
+        val mockEnabled = PaymentSettingKeys.MOCK_PAY_ENABLED.currentValue()
+        return PayChannelTable.query { where { PayChannel::status eq 1 } }.list()
+            .filter { platforms.platform(it.platformCode)?.sandbox == mockEnabled }
+    }
+
     /** 一次支付要用的两样东西：平台知道"怎么调"，通道提供"用哪套凭据、走哪条线"。 */
     private data class Route(val platform: PayPlatform, val channel: PayChannel)
 
