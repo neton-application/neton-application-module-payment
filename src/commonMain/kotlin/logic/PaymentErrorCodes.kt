@@ -87,6 +87,8 @@ object PaymentErrorCodes {
     // ---- 支付渠道 / 订单 ----
     const val PAY_CHANNEL_CODE_EXISTS = "PAY_CHANNEL_CODE_EXISTS"
     const val PAY_CHANNEL_NOT_FOUND = "PAY_CHANNEL_NOT_FOUND"
+    /** 新建通道时密钥字段填的是遮罩 ******（没有原值可沿用），必须填真实密钥。 */
+    const val PAY_CHANNEL_SECRET_REQUIRED = "PAY_CHANNEL_SECRET_REQUIRED"
     /** 支付通道不存在、停用或平台未注册。 */
     const val PAY_CHANNEL_UNAVAILABLE = "PAY_CHANNEL_UNAVAILABLE"
     const val PAY_ORDER_NOT_FOUND = "PAY_ORDER_NOT_FOUND"

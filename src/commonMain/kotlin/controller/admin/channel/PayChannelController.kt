@@ -32,7 +32,7 @@ class PayChannelController(
 
     @Get("/get-by-app-and-code")
     @Permission("pay:channel:query")
-    suspend fun getByCode(@Query code: String) = channelLogic.getByCode(code)
+    suspend fun getByCode(@Query code: String) = channelLogic.getByCode(code)?.let(channelLogic::forAdmin)
 
     @Get("/get-enable-code-list")
     @Permission("pay:channel:query")

@@ -36,7 +36,7 @@ class PayChannelLogic(
                 method = request.method,
                 platformChannelId = request.platformChannelId,
                 displayMode = request.displayMode,
-                config = request.config,
+                config = PayChannelSecrets.merge(request.config, stored = null),
                 status = request.status,
                 feeRate = request.feeRate,
                 remark = request.remark
@@ -55,7 +55,8 @@ class PayChannelLogic(
                 method = request.method,
                 platformChannelId = request.platformChannelId,
                 displayMode = request.displayMode,
-                config = request.config,
+                // 后台读到的密钥是遮罩：原样提交回来 / 留空 / 不写都沿用库里的值
+                config = PayChannelSecrets.merge(request.config, stored = current.config),
                 status = request.status,
                 feeRate = request.feeRate,
                 remark = request.remark,
@@ -68,6 +69,9 @@ class PayChannelLogic(
             ?: throw NotFoundException(PaymentErrorCodes.PAY_CHANNEL_NOT_FOUND)
         PayChannelTable.destroy(id)
     }
+
+    /** 后台读接口返回的通道：配置里的密钥换成遮罩。 */
+    fun forAdmin(channel: PayChannel): PayChannel = channel.copy(config = PayChannelSecrets.mask(channel.config))
 
     /** 渠道按 code 全局唯一 —— 单应用部署不需要再按 app 维度分组。 */
     suspend fun getByCode(code: String): PayChannel? =
@@ -93,7 +97,8 @@ class PayChannelLogic(
             }
             orderBy(PayChannel::id.desc())
         }.page(page, size)
-        return PageResponse(result.items, result.total, page, size,
+        // 后台列表的配置里密钥只给遮罩（见 PayChannelSecrets）
+        return PageResponse(result.items.map(::forAdmin), result.total, page, size,
             if (size > 0) ((result.total + size - 1) / size).toInt() else 0)
     }
 }
