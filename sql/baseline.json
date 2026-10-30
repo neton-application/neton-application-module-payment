@@ -1,0 +1,37 @@
+{
+  "release": "1.0.0-beta",
+  "module": "payment",
+  "fresh_install_only": true,
+  "dependencies": [
+    "system",
+    "infra"
+  ],
+  "baseline": [
+    {
+      "file": "V001__schema.sql",
+      "sha256": "ebdeee70d65bb08081ccd22e93f4411f088b0a7f486be33af3c118923d181777"
+    },
+    {
+      "file": "V002__data.sql",
+      "sha256": "d566519fa3ea60bff055b510bde6ced5bf7952b42e1339af8197b29f7f4b0e4b"
+    }
+  ],
+  "superseded": [
+    {
+      "name": "V001__baseline.sql",
+      "sha256": "db54b56c3a826862d977129ffe8c1e8bb5fe999441ae5759b609a76c2dfb3e7a"
+    },
+    {
+      "name": "V002__permission_action_unify.sql",
+      "sha256": "1392a5f4c6d5038cb745ca4f7f518f7f7dfe62897928c1dcbcda8f128ea2e8ad"
+    },
+    {
+      "name": "V003__channel_menu_and_buttons.sql",
+      "sha256": "dfdc45ad1234ae3f5f5598e71221295971152af26ecd01bc7299bb4d83857a2d"
+    },
+    {
+      "name": "V004__order_sync_button.sql",
+      "sha256": "383419bac67694ee74b03e3d10b03931db608d2fca91c986f1415e3b8cf77ca8"
+    }
+  ]
+}
