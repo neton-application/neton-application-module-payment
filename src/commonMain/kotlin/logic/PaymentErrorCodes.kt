@@ -11,6 +11,9 @@ object PaymentErrorCodes {
     const val AMOUNT_INVALID = "AMOUNT_INVALID"
     /** 后台手动充值 / 划扣的备注必填。 */
     const val REMARK_REQUIRED = "REMARK_REQUIRED"
+    const val CONSUMPTION_REF_INVALID = "CONSUMPTION_REF_INVALID"
+    const val CONSUMPTION_REF_CONFLICT = "CONSUMPTION_REF_CONFLICT"
+    const val CONSUMPTION_USER_NOT_FOUND = "CONSUMPTION_USER_NOT_FOUND"
 
     // ---- 钱包 / 余额 / 冻结 ----
     const val WALLET_NOT_FOUND = "WALLET_NOT_FOUND"
